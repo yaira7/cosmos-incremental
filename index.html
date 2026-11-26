@@ -280,6 +280,9 @@ button.nova {
   background: var(--surface);
 }
 .rate-box.peak { border-color: var(--nova); }
+.rate-box.idle { opacity: 0.6; }
+/* 文字の長さが変わっても高さが変わらないように、2行分を確保 */
+.rate-main, .rate-sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rate-main { font-weight: 600; }
 .rate-sub { font-size: 13px; color: var(--muted); }
 .rate-box.peak .rate-sub { color: var(--nova); }
@@ -489,7 +492,7 @@ button.danger { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 3
   <div class="tier-info num" id="snProgress"></div>
   <button class="nova" id="novaBtn" disabled>超新星を起こす</button>
   <div class="tier-info num sn-preview" id="snPreview"></div>
-  <div class="rate-box" id="rateBox" hidden>
+  <div class="rate-box" id="rateBox">
     <div class="rate-main num" id="rateMain"></div>
     <div class="rate-sub num" id="rateSub"></div>
   </div>
@@ -547,6 +550,13 @@ button.danger { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 3
     <div class="seg" id="notationSeg">
       <button data-v="suffix">略記</button>
       <button data-v="sci">指数</button>
+    </div>
+  </div>
+  <div class="setting">
+    <div><p>画面のフラッシュ</p><p class="desc">手で超新星・ブラックホール・ビッグクランチを起こしたときに画面を光らせるか。自動超新星では光らない</p></div>
+    <div class="seg" id="flashSeg">
+      <button data-v="on">ON</button>
+      <button data-v="off">OFF</button>
     </div>
   </div>
   <div class="setting">

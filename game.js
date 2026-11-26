@@ -166,6 +166,7 @@ function freshState() {
     crunchSeen: false,
     pity: 0,            // エピックが出ていない回数
     lastPull: null,     // 最後に引いたカード（表示用）
+    flashOn: true,      // 超新星などで画面をフラッシュさせるか
     hintOn: true,       // 起こしどきのヒントを出すか（ブラックホール後のみ）
     autoNovaAt: 3,      // 自動超新星：星屑がこの数以上もらえるときに起こす
     runTime: 0,         // この周回（前の超新星から）の経過秒数
@@ -285,20 +286,21 @@ function buyMax() {
 }
 
 // 超新星・ブラックホールで消えないもの
-const META_KEYS = ["seeds", "cards", "laws", "crunches", "crunchSeen", "pity", "lastPull", "windBoost", "notation", "speed", "last", "mass", "massTotal", "blackholes", "bhSeen", "mup", "autoNovaOn", "autoNovaAt", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2"];
+const META_KEYS = ["flashOn", "seeds", "cards", "laws", "crunches", "crunchSeen", "pity", "lastPull", "windBoost", "notation", "speed", "last", "mass", "massTotal", "blackholes", "bhSeen", "mup", "autoNovaOn", "autoNovaAt", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2"];
 function keepMeta() { const k = {}; META_KEYS.forEach(key => k[key] = S[key]); return k; }
 
-function supernova(silent) {
+// silent: 留守中の計算など、何も出さない / auto: 自動超新星（フラッシュとお知らせは出さず、保存はいつものタイミングで）
+function supernova(silent, auto) {
   if (snGain() <= 0) return;
   const g = rollGain();
-  if (!silent) toast(`超新星！ 星屑 +${fmt(g)}`);
+  if (!silent && !auto) toast(`超新星！ 星屑 +${fmt(g)}`);
   const keep = Object.assign(keepMeta(), {
     stardust: S.stardust + g, stardustTotal: S.stardustTotal + g, supernovas: S.supernovas + 1,
     cycleStardust: S.cycleStardust + g, bhNotified: S.bhNotified, rings: S.rings, up: S.up, autoOn: S.autoOn, novaSeen: true,
   });
   S = Object.assign(freshState(), keep);
   S.afterglow = AFTERGLOW_TIME;
-  if (!silent) { flash(); save(); }
+  if (!silent && !auto) { flash(); save(); }
 }
 
 // 1分あたりに稼げる星屑（今超新星したら）
@@ -314,7 +316,7 @@ const fmtTime = sec => `${Math.floor(sec / 60)}分${String(Math.floor(sec % 60))
 function autoNova(silent) {
   if (!mlvl("autoNova") || !S.autoNovaOn) return;
   // 星屑の量（倍率や端数で変わる）ではなく、恒星が何段階目に届いたかで判定する
-  if (snBase() >= S.autoNovaAt) supernova(silent);
+  if (snBase() >= S.autoNovaAt) supernova(silent, true);
 }
 
 function blackhole() {
@@ -334,7 +336,7 @@ function blackhole() {
 }
 
 // ビッグクランチで消えないもの（設定・記録・法則カードまわり）
-const CRUNCH_KEYS = ["notation", "speed", "last", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2",
+const CRUNCH_KEYS = ["flashOn", "notation", "speed", "last", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2",
   "seeds", "cards", "laws", "pity", "lastPull", "autoNovaOn", "autoNovaAt", "autoOn", "windBoost"];
 function bigCrunch() {
   const g = seedGainFor(S.runPeak);
@@ -954,18 +956,22 @@ function render() {
   btn.textContent = g > 0 ? `超新星を起こす（星屑 +${snGainText()}）` : "超新星を起こす";
   const hi = Math.ceil(snExpected());
   const rb = $("rateBox");
-  rb.hidden = g === 0;
-  if (g > 0) {
+  rb.classList.toggle("idle", g === 0);
+  if (g === 0) {
+    rb.classList.remove("peak");
+    $("rateMain").textContent = `この周回 ${fmtTime(S.runTime)}`;
+    $("rateSub").textContent = "起こせるようになると毎分の星屑が出る";
+  } else {
     const peak = hintActive() && pastPeak();
     rb.classList.toggle("peak", peak);
     $("rateMain").textContent = `この周回 ${fmtTime(S.runTime)} ・ 毎分 ${runRate().toFixed(2)} 星屑`;
     $("rateSub").textContent = peak
-      ? `最高は毎分 ${S.runBestRate.toFixed(2)}。さっきの+1は最高に届かなかったので、粘るより起こした方が速そう`
+      ? `最高は毎分 ${S.runBestRate.toFixed(2)}。粘るより起こした方が速そう`
       : `この周回の最高 毎分 ${S.runBestRate.toFixed(2)}`;
   }
   $("snPreview").textContent = g > 0
     ? `手持ちの星屑 ${fmt(S.stardust)} → ${g === hi ? fmt(S.stardust + g) : `${fmt(S.stardust + g)}〜${fmt(S.stardust + hi)}`}`
-    : "";
+    : "\u00a0"; // 空でも1行分の高さを残す
   renderShop();
   renderBH();
   renderCrunch();
@@ -1035,10 +1041,12 @@ function syncSettings() {
   document.querySelectorAll("#notationSeg button").forEach(b => b.setAttribute("aria-pressed", b.dataset.v === S.notation));
   document.querySelectorAll("#speedSeg button").forEach(b => b.setAttribute("aria-pressed", Number(b.dataset.v) === S.speed));
   document.querySelectorAll("#hintSeg button").forEach(b => b.setAttribute("aria-pressed", (b.dataset.v === "on") === S.hintOn));
+  document.querySelectorAll("#flashSeg button").forEach(b => b.setAttribute("aria-pressed", (b.dataset.v === "on") === (S.flashOn !== false)));
 }
 document.querySelectorAll("#notationSeg button").forEach(b => b.addEventListener("click", () => { S.notation = b.dataset.v; syncSettings(); render(); }));
 document.querySelectorAll("#speedSeg button").forEach(b => b.addEventListener("click", () => { S.speed = Number(b.dataset.v); syncSettings(); }));
 document.querySelectorAll("#hintSeg button").forEach(b => b.addEventListener("click", () => { S.hintOn = b.dataset.v === "on"; syncSettings(); render(); }));
+document.querySelectorAll("#flashSeg button").forEach(b => b.addEventListener("click", () => { S.flashOn = b.dataset.v === "on"; syncSettings(); }));
 
 $("exportBtn").addEventListener("click", () => {
   const box = $("saveText");
@@ -1100,7 +1108,7 @@ function toast(msg) {
 const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 function flash(dark) {
   const f = $("flash");
-  if (reduceMotion) return;
+  if (reduceMotion || S.flashOn === false) return;
   f.style.background = dark ? "#000" : "#fff";
   f.style.transition = "none";
   f.style.opacity = "0.95";
