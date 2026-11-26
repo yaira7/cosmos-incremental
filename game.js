@@ -41,7 +41,7 @@ const MUPGRADES = [
     cost: () => 4,                   effect: lv => lv ? "あり" : "なし" },
   { id: "spd2",     name: "外側の円盤を加速", desc: "外側の円盤が速く回る", max: 10, needs: "ring2",
     cost: lv => 3 * Math.pow(2, lv), effect: lv => `1周 ${ringPeriodAt(2, lv).toFixed(1)}秒` },
-  { id: "autoNova", name: "自動超新星",       desc: "決めた星屑の量に届いたら、自動で超新星を起こす", max: 1,
+  { id: "autoNova", name: "自動超新星",       desc: "恒星が決めた段階に届いたら、自動で超新星を起こす", max: 1,
     cost: () => 2,                   effect: lv => lv ? "あり" : "なし" },
   { id: "keepAuto", name: "自動購入の記憶",   desc: "ブラックホールを起こしても、星屑ショップの自動購入が残る", max: 1,
     cost: () => 2,                   effect: lv => lv ? "残る" : "残らない" },
@@ -102,6 +102,7 @@ function freshState() {
     mup: freshMup(),
     autoNovaOn: true,
     bhNotified: false,  // この周期で「ブラックホールを起こせる」を知らせたか
+    windBoost: 0,       // 流れ星の追い風の残り秒数
     hintOn: true,       // 起こしどきのヒントを出すか（ブラックホール後のみ）
     autoNovaAt: 3,      // 自動超新星：星屑がこの数以上もらえるときに起こす
     runTime: 0,         // この周回（前の超新星から）の経過秒数
@@ -131,7 +132,10 @@ const afterglowMult = i => {
   return 1 + (afterglowPeakAt(lvl("afterglow")) - 1) * (S.afterglow / AFTERGLOW_TIME);
 };
 const diskMult = i => i === 0 ? ringMult(0) : ringMult(1);           // 降着円盤（内側は塵、中間は上の段）
-const mult = i => msMult(i) * glowMult(i) * afterglowMult(i) * diskMult(i);
+// 流れ星の「追い風」：決まった秒数だけ塵の生産が上がる
+const WIND_TIME = 30, WIND_MULT = 3;
+const windMult = i => i === 0 && S.windBoost > 0 ? WIND_MULT : 1;
+const mult = i => msMult(i) * glowMult(i) * afterglowMult(i) * diskMult(i) * windMult(i);
 const rateOf = i => S.amt[i] * TIERS[i].prod * mult(i); // その段が毎秒生む量
 // 圧縮で値上がり幅（r − 1）が1レベルごとに10%ずつ縮む
 const rOf = i => 1 + (TIERS[i].r - 1) * Math.pow(COMPRESS_RATE, lvl("compress"));
@@ -168,6 +172,7 @@ function tick(dt) {
   S.dust += r[0] * dt;
   for (let i = 1; i < TIERS.length; i++) S.amt[i - 1] += r[i] * dt;
   if (S.afterglow > 0) S.afterglow = Math.max(0, S.afterglow - dt);
+  if (S.windBoost > 0) S.windBoost = Math.max(0, S.windBoost - dt);
   S.runTime += dt;
   const rate = runRate();
   if (rate > S.runBestRate) S.runBestRate = rate;
@@ -215,7 +220,7 @@ function buyMax() {
 }
 
 // 超新星・ブラックホールで消えないもの
-const META_KEYS = ["notation", "speed", "last", "mass", "massTotal", "blackholes", "bhSeen", "mup", "autoNovaOn", "autoNovaAt", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2"];
+const META_KEYS = ["windBoost", "notation", "speed", "last", "mass", "massTotal", "blackholes", "bhSeen", "mup", "autoNovaOn", "autoNovaAt", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2"];
 function keepMeta() { const k = {}; META_KEYS.forEach(key => k[key] = S[key]); return k; }
 
 function supernova(silent) {
@@ -243,7 +248,8 @@ const fmtTime = sec => `${Math.floor(sec / 60)}分${String(Math.floor(sec % 60))
 // 自動超新星：基準に届いていたら起こす
 function autoNova(silent) {
   if (!mlvl("autoNova") || !S.autoNovaOn) return;
-  if (snGain() >= S.autoNovaAt) supernova(silent);
+  // 星屑の量（倍率や端数で変わる）ではなく、恒星が何段階目に届いたかで判定する
+  if (snBase() >= S.autoNovaAt) supernova(silent);
 }
 
 function blackhole() {
@@ -652,7 +658,10 @@ function goalText() {
 function render() {
   $("dust").textContent = fmt(S.dust);
   const ag = afterglowMult(0);
-  $("rate").textContent = `毎秒 ${fmt(dustPerSec(), true)}` + (ag > 1 ? `（残光 ×${ag.toFixed(1)} あと${Math.ceil(S.afterglow)}秒）` : "");
+  const extras = [];
+  if (ag > 1) extras.push(`残光 ×${ag.toFixed(1)} あと${Math.ceil(S.afterglow)}秒`);
+  if (S.windBoost > 0) extras.push(`追い風 ×${WIND_MULT} あと${Math.ceil(S.windBoost)}秒`);
+  $("rate").textContent = `毎秒 ${fmt(dustPerSec(), true)}` + (extras.length ? `（${extras.join("、")}）` : "");
   const sd = $("sdChip");
   sd.hidden = S.stardust === 0;
   sd.textContent = `星屑 ${fmt(S.stardust)}`;
@@ -738,7 +747,7 @@ function render() {
   // 自動超新星の設定
   const an = $("autoNovaRow");
   an.hidden = !mlvl("autoNova");
-  $("autoNovaDesc").textContent = `星屑 +${S.autoNovaAt} 以上もらえるときに自動で起こす`;
+  $("autoNovaDesc").textContent = `恒星が ${S.autoNovaAt} 段階目（${fmt(SN_REQ * Math.pow(SN_GAIN_SCALE, S.autoNovaAt - 1))}個）に届いたら自動で起こす`;
   $("anToggle").textContent = S.autoNovaOn ? "ON" : "OFF";
   $("anToggle").setAttribute("aria-pressed", S.autoNovaOn);
   const ab = $("autoBtn");
@@ -761,6 +770,7 @@ document.querySelectorAll(".tab[data-tab]").forEach(tab => {
 $("buyMax").addEventListener("click", () => { buyMax(); render(); });
 $("autoBtn").addEventListener("click", () => { S.autoOn = !S.autoOn; render(); });
 $("bhBtn").addEventListener("click", () => { blackhole(); render(); });
+$("shootingStar").addEventListener("click", catchStar);
 $("goExport").addEventListener("click", () => {
   document.querySelector('.tab[data-tab="settings"]').click();
   document.getElementById("saveText").scrollIntoView({ block: "center" });
@@ -1131,6 +1141,51 @@ function glow(x, y, core, halo, t) {
   ctx.beginPath(); ctx.arc(x, y, core, 0, Math.PI * 2); ctx.fill();
 }
 
+// ===== 流れ星 =====
+// 遊んでいる間だけ、ときどき宇宙を横切る。タップすると、ランダムでいいことがある
+const STAR_MIN_GAP = 60, STAR_MAX_GAP = 150; // 次の流れ星までの秒数（実時間）
+const STAR_DURATION = 7;                     // 画面を横切る秒数
+let starNextAt = performance.now() + (20 + Math.random() * 40) * 1000; // 最初の1つは早めに
+let star = null;
+function scheduleStar(now) {
+  starNextAt = now + (STAR_MIN_GAP + Math.random() * (STAR_MAX_GAP - STAR_MIN_GAP)) * 1000;
+}
+function updateStar(now) {
+  const el = $("shootingStar");
+  if (!star) {
+    if (now < starNextAt || document.hidden) return;
+    const ltr = Math.random() < 0.5;
+    star = { start: now, ltr, y0: 0.1 + Math.random() * 0.3, y1: 0.45 + Math.random() * 0.35 };
+    el.classList.toggle("rtl", !ltr);
+    el.hidden = false;
+  }
+  const p = (now - star.start) / (STAR_DURATION * 1000);
+  if (p >= 1) { star = null; el.hidden = true; scheduleStar(now); return; }
+  const wrap = el.parentElement;
+  const w = wrap.clientWidth, h = wrap.clientHeight;
+  const x = star.ltr ? -0.1 + 1.2 * p : 1.1 - 1.2 * p;
+  const y = star.y0 + (star.y1 - star.y0) * p;
+  el.style.transform = `translate(${x * w - 22}px, ${y * h - 22}px)`;
+}
+function catchStar() {
+  const el = $("shootingStar");
+  if (!star) return;
+  star = null;
+  el.hidden = true;
+  scheduleStar(performance.now());
+  const rewards = [
+    () => { S.windBoost = WIND_TIME; return `追い風！ ${WIND_TIME}秒間、塵の生産 ×${WIND_MULT}`; },
+    () => { const g = dustPerSec() * 60; S.dust += g; return `塵の雨！ 塵 +${fmt(g)}（60秒分）`; },
+  ];
+  if (S.blackholes > 0) rewards.push(() => {
+    for (let k = 0; k < RINGS.length; k++) if (ringActive(k)) S.rings[k] += 3;
+    return "軌道の加速！ 降着円盤がそれぞれ3周進んだ";
+  });
+  const msg = rewards[Math.floor(Math.random() * rewards.length)]();
+  toast(`流れ星をつかまえた！ ${msg}`);
+  render();
+}
+
 // ===== ゲームループ =====
 let lastUI = 0, lastSave = 0;
 function loop(now) {
@@ -1142,6 +1197,7 @@ function loop(now) {
   S.last = wall;
 
   drawUniverse(now);
+  updateStar(now);
   if (!$("panel-bh").hidden) drawBH(now);
   if (now - lastUI > 100) { render(); lastUI = now; }
   if (now - lastSave > 10000) { save(); lastSave = now; }

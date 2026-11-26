@@ -113,6 +113,46 @@ body {
 
 /* 宇宙ビジュアル */
 .universe-wrap { position: relative; height: 34vh; min-height: 220px; }
+/* 流れ星：タップしやすいように44pxの当たり判定。見た目は光る粒と尾 */
+.universe-wrap { overflow: hidden; }
+.shooting-star {
+  position: absolute;
+  left: 0; top: 0;
+  width: 44px; height: 44px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+.shooting-star::before {
+  content: "";
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 9px; height: 9px;
+  margin: -4.5px 0 0 -4.5px;
+  border-radius: 50%;
+  background: var(--star);
+  box-shadow: 0 0 10px 3px var(--star);
+}
+.shooting-star::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 50%;
+  width: 70px; height: 2px;
+  margin-top: -1px;
+  background: linear-gradient(to left, var(--star), transparent);
+  transform-origin: right center;
+  transform: rotate(14deg); /* 右下へ進むので、尾は左上に伸ばす */
+}
+.shooting-star.rtl::after {
+  right: auto;
+  left: 50%;
+  background: linear-gradient(to right, var(--star), transparent);
+  transform-origin: left center;
+  transform: rotate(-14deg); /* 左下へ進むので、尾は右上に伸ばす */
+}
+.shooting-star:focus-visible { outline: 2px solid var(--accent); border-radius: 50%; }
 #universe { width: 100%; height: 100%; display: block; }
 .goal {
   position: absolute;
@@ -375,6 +415,7 @@ button.danger { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 3
 
 <div class="universe-wrap">
   <canvas id="universe" aria-label="今の宇宙の様子"></canvas>
+  <button class="shooting-star" id="shootingStar" aria-label="流れ星をつかまえる" hidden></button>
   <div class="goal" id="goal"></div>
 </div>
 
