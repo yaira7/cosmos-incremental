@@ -59,6 +59,8 @@
     --bh-core: #000000;
   }
 * { box-sizing: border-box; }
+/* hidden属性を付けた要素は、displayの指定があっても必ず隠す */
+[hidden] { display: none !important; }
 body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
 html, body { margin: 0; background: var(--bg); color: var(--ink); }
 body {
