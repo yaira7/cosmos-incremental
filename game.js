@@ -10,7 +10,7 @@ const TIERS = [
 const FIRST_MILESTONE = 10;
 const MILESTONE_STEP = 25;
 const MILESTONE_MULT = 2;
-const SN_REQ = 500;           // 超新星に必要な恒星の量
+const SN_REQ_BASE = 500;      // 超新星に必要な恒星の量（法則カードで変わる）
 
 const memMultAt = lv => 1 + 0.5 * lv;            // 恒星の記憶：×1 → ×1.5 → ×2 → ×2.5
 const COMPRESS_RATE = 0.8;                       // 圧縮1レベルごとに、値上がり幅がこの割合になる（−20%ずつ）
@@ -20,13 +20,14 @@ const afterglowPeakAt = lv => 1 + 4 * lv;         // 超新星直後の倍率（
 const AUTO_BUDGET = 0.1;
 
 // ===== ブラックホールと降着円盤 =====
-const BH_REQ = 100;                                   // この周期で手に入れた星屑がこれだけあると起こせる
+const BH_REQ_BASE = 100;                              // この周期で手に入れた星屑がこれだけあると起こせる（法則カードで変わる）
 // 質量は「星屑が2倍になるごとに+1」：100で2、200で3、400で4、800で5…
 // 超新星層が完成して星屑の増え方が一定になると、+1までの時間がどんどん倍になるので、
 // 「どこかで止めてブラックホールを起こした方が得」になる
 const MASS_BASE = 25;
-const massGainFor = sd => sd >= BH_REQ ? Math.floor(Math.log2(sd / MASS_BASE)) : 0;
-const massNextAt = g => MASS_BASE * Math.pow(2, g + 1); // 質量が g+1 になる星屑の量
+const massBase = () => MASS_BASE * bhReqMult();
+const massGainFor = sd => sd >= bhReq() ? Math.floor(Math.log2(sd / massBase())) + lawMassBonus() : 0;
+const massNextAt = g => massBase() * Math.pow(2, g + 1 - lawMassBonus()); // 質量が g+1 になる星屑の量
 const RINGS = [
   { name: "内側の円盤", period: 10,  per: 0.1,  target: "塵の生産" },
   { name: "中間の円盤", period: 45,  per: 0.05, target: "惑星・恒星・銀河の生産" },
@@ -53,10 +54,59 @@ const MUPGRADES = [
 const freshMup = () => Object.fromEntries(MUPGRADES.map(u => [u.id, 0]));
 const mlvl = id => (S.mup && S.mup[id]) || 0;
 const ringPeriodAt = (i, lv) => RINGS[i].period / Math.pow(RING_SPEEDUP, lv);
-const ringPeriod = i => ringPeriodAt(i, mlvl("spd" + i));
+const ringPeriod = i => ringPeriodAt(i, mlvl("spd" + i)) / lawSpin();
 const ringActive = i => S.blackholes > 0 && (i === 0 || mlvl("ring" + i) > 0);
 const ringLaps = i => Math.floor((S.rings[i] || 0) + 1e-9);
 const ringMult = i => ringActive(i) ? 1 + RINGS[i].per * ringLaps(i) : 1;
+
+// ===== ビッグクランチと法則カード =====
+const CRUNCH_REQ = 1e40;         // 1回の周回で塵がこれだけ貯まったらビッグクランチを起こせる
+// もらえる宇宙の種：1e40で3つ、そこから塵が10万倍（e+5）になるごとに+1
+const seedGainFor = peak => peak >= CRUNCH_REQ ? 3 + Math.floor((Math.log10(peak) - 40) / 5) : 0;
+const GACHA_COST = 1;            // ガチャ1回に使う宇宙の種
+const PITY = 10;                 // この回数のうちにエピックが出なければ、10回目はエピック確定
+const LAW_MAX = 5;               // カードの最大レベル（ダブるとレベルが上がる）
+const RARITY = {
+  c: { name: "コモン",   weight: 65 },
+  r: { name: "レア",     weight: 27 },
+  e: { name: "エピック", weight: 8 },
+};
+// good / bad は説明文。効果そのものは下の law〜 関数で計算する
+const LAWS = [
+  { id: "dense",  rar: "c", name: "濃い塵",     good: lv => `塵の生産 ×${1 + lv}` },
+  { id: "spin",   rar: "c", name: "回る円盤",   good: lv => `円盤の回転 ×${(1 + 0.2 * lv).toFixed(1)}` },
+  { id: "meteor", rar: "c", name: "流れ星の夜", good: lv => `流れ星が出る間隔 ×${Math.pow(0.85, lv).toFixed(2)}` },
+  { id: "cheap",  rar: "c", name: "安い星",     good: lv => `値上がり幅 −${5 * lv}%` },
+  { id: "heavy",  rar: "r", name: "重い宇宙",   good: lv => `節目の倍率 ×${(1.2 + 0.1 * lv).toFixed(1)}`, bad: "値上がり幅 +30%" },
+  { id: "light",  rar: "r", name: "速い光",     good: lv => `惑星・恒星・銀河の生産 ×${2 + lv}`, bad: "岩の生産 ×0.5" },
+  { id: "cold",   rar: "r", name: "冷えた宇宙", good: lv => `円盤の回転 ×${(2 + 0.5 * lv).toFixed(1)}`, bad: "残光が効かない" },
+  { id: "young",  rar: "e", name: "若い宇宙",   good: lv => `超新星の星屑 ×${2 + lv}`, bad: "超新星に必要な恒星 ×10" },
+  { id: "swell",  rar: "e", name: "膨らむ宇宙", good: lv => `ブラックホールの質量 +${lv}`, bad: "ブラックホールに必要な星屑 ×2" },
+  { id: "silent", rar: "e", name: "静かな宇宙", good: lv => `塵の生産 ×${5 + 2 * lv}`, bad: "自動購入が効かない" },
+];
+const lawById = id => LAWS.find(l => l.id === id);
+// 装備している法則のレベル（装備していなければ0）
+const law = id => (S.laws || []).includes(id) ? ((S.cards || {})[id] || 0) : 0;
+const lawSlots = () => 2 + (S.crunches >= 3 ? 1 : 0) + (S.crunches >= 5 ? 1 : 0);
+const lawRock   = () => (law("dense") ? 1 + law("dense") : 1) * (law("light") ? 0.5 : 1) * (law("silent") ? 5 + 2 * law("silent") : 1);
+const lawUpper  = () => law("light") ? 2 + law("light") : 1;
+const lawMs     = () => law("heavy") ? 1.2 + 0.1 * law("heavy") : 1;
+const lawGrowth = () => (law("cheap") ? 1 - 0.05 * law("cheap") : 1) * (law("heavy") ? 1.3 : 1);
+const lawSpin   = () => (law("spin") ? 1 + 0.2 * law("spin") : 1) * (law("cold") ? 2 + 0.5 * law("cold") : 1);
+const lawSnGain = () => law("young") ? 2 + law("young") : 1;
+const snReq     = () => SN_REQ_BASE * (law("young") ? 10 : 1);
+const bhReqMult = () => law("swell") ? 2 : 1;
+const bhReq     = () => BH_REQ_BASE * bhReqMult();
+const lawMassBonus = () => law("swell");
+const lawStarGap = () => law("meteor") ? Math.pow(0.85, law("meteor")) : 1;
+const lawNoAuto  = () => law("silent") > 0;
+// ビッグクランチの回数でもらえるマイルストーン
+const CRUNCH_MILESTONES = [
+  { at: 1, text: "法則カードとガチャが解放。法則の枠 2つ" },
+  { at: 1, text: "2回目のビッグクランチから、自動化（自動購入・自動超新星・自動購入の記憶）が消えなくなる" },
+  { at: 3, text: "法則の枠 +1（3つ）" },
+  { at: 5, text: "法則の枠 +1（4つ）" },
+];
 
 // ===== 星屑ショップ =====
 // cost(lv) = 次のレベルの値段、max = 最大レベル（なしなら無限）
@@ -107,6 +157,15 @@ function freshState() {
     autoNovaOn: true,
     bhNotified: false,  // この周期で「ブラックホールを起こせる」を知らせたか
     windBoost: 0,       // 流れ星の追い風の残り秒数
+    runPeak: 0,         // この周回で貯まった塵の最高値（ビッグクランチの条件）
+    crunchNotified: false,
+    seeds: 0,           // 宇宙の種（ガチャに使う）
+    cards: {},          // 持っている法則カード { id: レベル }
+    laws: [],           // 今の宇宙に組み込んでいる法則
+    crunches: 0,
+    crunchSeen: false,
+    pity: 0,            // エピックが出ていない回数
+    lastPull: null,     // 最後に引いたカード（表示用）
     hintOn: true,       // 起こしどきのヒントを出すか（ブラックホール後のみ）
     autoNovaAt: 3,      // 自動超新星：星屑がこの数以上もらえるときに起こす
     runTime: 0,         // この周回（前の超新星から）の経過秒数
@@ -127,22 +186,23 @@ function msInfo(b) {
   while (b >= next) { n++; prev = next; next += MILESTONE_STEP * n; }
   return { n, prev, next };
 }
-const milestoneMult = () => milestoneMultAt(lvl("gravity"));
+const milestoneMult = () => milestoneMultAt(lvl("gravity")) * lawMs();
 const msMult = i => Math.pow(milestoneMult(), msInfo(S.bought[i]).n); // 節目による倍率
 const glowMult = i => i === 0 ? 1 + lvl("glow") : 1;                  // 岩の輝き（岩だけ）
 // 残光：超新星直後に最大、AFTERGLOW_TIME秒かけて×1まで直線的に下がる（岩だけ）
 const afterglowMult = i => {
-  if (i !== 0 || !S.afterglow || lvl("afterglow") === 0) return 1;
+  if (i !== 0 || !S.afterglow || lvl("afterglow") === 0 || law("cold")) return 1;
   return 1 + (afterglowPeakAt(lvl("afterglow")) - 1) * (S.afterglow / AFTERGLOW_TIME);
 };
 const diskMult = i => i === 0 ? ringMult(0) : ringMult(1);           // 降着円盤（内側は塵、中間は上の段）
 // 流れ星の「追い風」：決まった秒数だけ塵の生産が上がる
 const WIND_TIME = 30, WIND_MULT = 3;
 const windMult = i => i === 0 && S.windBoost > 0 ? WIND_MULT : 1;
-const mult = i => msMult(i) * glowMult(i) * afterglowMult(i) * diskMult(i) * windMult(i);
+const lawMult = i => i === 0 ? lawRock() : lawUpper();
+const mult = i => msMult(i) * glowMult(i) * afterglowMult(i) * diskMult(i) * windMult(i) * lawMult(i);
 const rateOf = i => S.amt[i] * TIERS[i].prod * mult(i); // その段が毎秒生む量
 // 圧縮で値上がり幅（r − 1）が1レベルごとに10%ずつ縮む
-const rOf = i => 1 + (TIERS[i].r - 1) * Math.pow(COMPRESS_RATE, lvl("compress"));
+const rOf = i => 1 + (TIERS[i].r - 1) * Math.pow(COMPRESS_RATE, lvl("compress")) * lawGrowth();
 const price = i => TIERS[i].base * Math.pow(rOf(i), S.bought[i]);
 // n個まとめて買うときの合計（等比数列の和）
 const bulkCost = (i, n) => price(i) * (Math.pow(rOf(i), n) - 1) / (rOf(i) - 1);
@@ -155,9 +215,9 @@ const maxAffordable = i => {
 };
 const unlocked = i => i === 0 || S.bought[i - 1] > 0;
 const dustPerSec = () => rateOf(0);
-// 恒星がSN_REQで1つ、その10倍で2つ、100倍で3つ…
-const snBase = () => S.amt[2] >= SN_REQ ? Math.floor(Math.log(S.amt[2] / SN_REQ) / Math.log(SN_GAIN_SCALE)) + 1 : 0;
-const snExpected = () => snBase() * memMultAt(lvl("memory")) * ringMult(2);   // 端数込みの獲得量
+// 恒星がsnReq()で1つ、その10倍で2つ、100倍で3つ…
+const snBase = () => S.amt[2] >= snReq() ? Math.floor(Math.log(S.amt[2] / snReq()) / Math.log(SN_GAIN_SCALE)) + 1 : 0;
+const snExpected = () => snBase() * memMultAt(lvl("memory")) * ringMult(2) * lawSnGain();   // 端数込みの獲得量
 const snGain = () => Math.floor(snExpected());                      // 最低保証の獲得量
 // 表示用：端数があるときは「3〜4」のように幅で出す
 const snGainText = () => {
@@ -177,6 +237,7 @@ function tick(dt) {
   for (let i = 1; i < TIERS.length; i++) S.amt[i - 1] += r[i] * dt;
   if (S.afterglow > 0) S.afterglow = Math.max(0, S.afterglow - dt);
   if (S.windBoost > 0) S.windBoost = Math.max(0, S.windBoost - dt);
+  if (S.dust > S.runPeak) S.runPeak = S.dust;
   S.runTime += dt;
   const rate = runRate();
   if (rate > S.runBestRate) S.runBestRate = rate;
@@ -224,7 +285,7 @@ function buyMax() {
 }
 
 // 超新星・ブラックホールで消えないもの
-const META_KEYS = ["windBoost", "notation", "speed", "last", "mass", "massTotal", "blackholes", "bhSeen", "mup", "autoNovaOn", "autoNovaAt", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2"];
+const META_KEYS = ["seeds", "cards", "laws", "crunches", "crunchSeen", "pity", "lastPull", "windBoost", "notation", "speed", "last", "mass", "massTotal", "blackholes", "bhSeen", "mup", "autoNovaOn", "autoNovaAt", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2"];
 function keepMeta() { const k = {}; META_KEYS.forEach(key => k[key] = S[key]); return k; }
 
 function supernova(silent) {
@@ -272,6 +333,61 @@ function blackhole() {
   buildTiers();
 }
 
+// ビッグクランチで消えないもの（設定・記録・法則カードまわり）
+const CRUNCH_KEYS = ["notation", "speed", "last", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2",
+  "seeds", "cards", "laws", "pity", "lastPull", "autoNovaOn", "autoNovaAt", "autoOn", "windBoost"];
+function bigCrunch() {
+  const g = seedGainFor(S.runPeak);
+  if (g <= 0) return;
+  const keepAutomation = S.crunches >= 1; // 2回目のビッグクランチから自動化が残る
+  const k = {};
+  CRUNCH_KEYS.forEach(key => k[key] = S[key]);
+  const up = freshUp(), mup = freshMup();
+  if (keepAutomation) {
+    up.auto = lvl("auto");
+    mup.autoNova = mlvl("autoNova");
+    mup.keepAuto = mlvl("keepAuto");
+  }
+  Object.assign(k, {
+    seeds: S.seeds + g, crunches: S.crunches + 1, crunchSeen: true, novaSeen: true, bhSeen: true,
+    up, mup,
+  });
+  S = Object.assign(freshState(), k);
+  toast(`ビッグクランチ！ 宇宙の種 +${fmt(g)}`);
+  flash(true);
+  save();
+  buildTiers();
+}
+
+// ガチャ：レア度を決めてから、そのレア度のカードを1枚選ぶ
+function pullLaw() {
+  if (S.seeds < GACHA_COST) return null;
+  S.seeds -= GACHA_COST;
+  let rar;
+  if (S.pity >= PITY - 1) rar = "e";
+  else {
+    let x = Math.random() * 100;
+    rar = x < RARITY.e.weight ? "e" : x < RARITY.e.weight + RARITY.r.weight ? "r" : "c";
+  }
+  S.pity = rar === "e" ? 0 : S.pity + 1;
+  const pool = LAWS.filter(l => l.rar === rar);
+  const card = pool[Math.floor(Math.random() * pool.length)];
+  const before = S.cards[card.id] || 0;
+  let result;
+  if (before === 0) { S.cards[card.id] = 1; result = "new"; }
+  else if (before < LAW_MAX) { S.cards[card.id] = before + 1; result = "up"; }
+  else { S.seeds += GACHA_COST; result = "max"; } // 最大レベルのダブりは種を返す
+  S.lastPull = { id: card.id, result, lv: S.cards[card.id] };
+  save();
+  return S.lastPull;
+}
+function toggleLaw(id) {
+  const i = S.laws.indexOf(id);
+  if (i >= 0) S.laws.splice(i, 1);
+  else if (S.laws.length < lawSlots() && S.cards[id]) S.laws.push(id);
+  save();
+}
+
 function buyMassUpgrade(u) {
   const lv = mlvl(u.id);
   if (lv >= u.max) return;
@@ -297,7 +413,7 @@ function buyUpgrade(u) {
 let autoTimer = 0;
 function autoBuy(dt) {
   const n = lvl("auto");
-  if (n === 0 || !S.autoOn) return;
+  if (n === 0 || !S.autoOn || lawNoAuto()) return;
   autoTimer += dt;
   if (autoTimer < 0.5) return;
   autoTimer = 0;
@@ -416,6 +532,8 @@ function applySave(d) {
       S = Object.assign(freshState(), d);
       S.up = Object.assign(freshUp(), d.up || {});
       S.mup = Object.assign(freshMup(), d.mup || {});
+      if (!d.cards) S.cards = {};
+      if (!Array.isArray(d.laws)) S.laws = [];
       if (!S.mup.autoNova && d.autoNovaAt === 5) S.autoNovaAt = 3; // 初期値を5→3に変えたので、まだ使っていない人は3に
       if (d.runTime === undefined) S.runTime = 0;
       if (!Array.isArray(d.rings)) S.rings = [0, 0, 0];
@@ -589,8 +707,110 @@ function buildBH() {
     mshopEls.push({ row, lv: row.querySelector(".lv"), effect: row.querySelector(".up-effect"), btn: row.querySelector("button"), cost: row.querySelector("small") });
   });
 }
+let pullAnimAt = 0;
+function renderCrunch() {
+  if (S.blackholes >= 3 || S.crunches > 0) S.crunchSeen = true;
+  const tab = $("crunchTab");
+  tab.textContent = S.crunchSeen ? "ビッグクランチ" : "？？？";
+  tab.disabled = !S.crunchSeen;
+  const ready = seedGainFor(S.runPeak) > 0;
+  if (ready && !S.crunchNotified) {
+    S.crunchNotified = true;
+    toast(`ビッグクランチを起こせるようになった！（宇宙の種 +${seedGainFor(S.runPeak)}）`);
+  }
+  tab.classList.toggle("ready", ready);
+  if ($("panel-crunch").hidden) return;
+
+  $("crSeeds").textContent = `${fmt(S.seeds)} 宇宙の種`;
+  const lg = S.runPeak > 1 ? Math.log10(S.runPeak) : 0;
+  $("crBar").style.width = Math.min(100, lg / Math.log10(CRUNCH_REQ) * 100) + "%";
+  const g = seedGainFor(S.runPeak);
+  $("crProgress").textContent = g > 0
+    ? `この周回の塵の最高 ${fmt(S.runPeak)}。種がもう1つ増えるまで 塵 ${fmt(Math.pow(10, 40 + 5 * (g - 2)))}`
+    : `この周回の塵の最高 ${fmt(S.runPeak)} / ${fmt(CRUNCH_REQ)}`;
+  const btn = $("crBtn");
+  btn.disabled = g === 0;
+  if (!crunchArmed) btn.textContent = g > 0 ? `ビッグクランチを起こす（宇宙の種 +${fmt(g)}）` : "ビッグクランチを起こす";
+
+  $("crMilestones").innerHTML = "";
+  CRUNCH_MILESTONES.forEach(m => {
+    const li = document.createElement("li");
+    li.className = S.crunches >= m.at ? "done" : "";
+    li.textContent = `${m.at}回：${m.text}`;
+    $("crMilestones").appendChild(li);
+  });
+
+  const lawOpen = S.crunches > 0 || S.seeds > 0 || Object.keys(S.cards).length > 0;
+  $("lawArea").hidden = !lawOpen;
+  if (!lawOpen) return;
+
+  // ガチャ
+  $("pullBtn").disabled = S.seeds < GACHA_COST;
+  $("pullBtn").textContent = `ガチャを引く（宇宙の種 ${GACHA_COST}）`;
+  const left = PITY - S.pity;
+  $("pityText").textContent = `あと ${left} 回のうちにエピックが出なければ、${left}回目はエピック確定`;
+  const r = $("pullResult");
+  if (S.lastPull) {
+    const l = lawById(S.lastPull.id);
+    const label = S.lastPull.result === "new" ? "NEW!" : S.lastPull.result === "up" ? `Lv ${S.lastPull.lv} に上がった` : "最大レベルなので種を返した";
+    r.hidden = false;
+    r.className = `pull-result law rar-${l.rar}` + (performance.now() - pullAnimAt < 700 ? " pop" : "");
+    r.innerHTML = "";
+    r.appendChild(lawCardBody(l, S.cards[l.id] || 1, label));
+  } else r.hidden = true;
+
+  // 今の宇宙の法則と手持ちのカード
+  $("lawSlots").textContent = `今の宇宙の法則（${S.laws.length} / ${lawSlots()}）`;
+  const list = $("lawList");
+  list.innerHTML = "";
+  const owned = LAWS.filter(l => S.cards[l.id]);
+  if (owned.length === 0) {
+    const p = document.createElement("p");
+    p.className = "sn-text";
+    p.textContent = "まだ法則カードを持っていない。宇宙の種でガチャを引こう。";
+    list.appendChild(p);
+  }
+  owned.forEach(l => {
+    const on = S.laws.includes(l.id);
+    const row = document.createElement("div");
+    row.className = `law rar-${l.rar}` + (on ? " on" : "");
+    row.appendChild(lawCardBody(l, S.cards[l.id], null));
+    const b = document.createElement("button");
+    b.className = "buy law-btn";
+    b.textContent = on ? "外す" : "組み込む";
+    b.disabled = !on && S.laws.length >= lawSlots();
+    b.addEventListener("click", () => { toggleLaw(l.id); render(); });
+    row.appendChild(b);
+    list.appendChild(row);
+  });
+}
+function lawCardBody(l, lv, label) {
+  const d = document.createElement("div");
+  d.className = "law-body";
+  const head = document.createElement("div");
+  head.className = "law-head";
+  const name = document.createElement("span");
+  name.className = "law-name";
+  name.textContent = l.name;
+  const meta = document.createElement("span");
+  meta.className = "law-meta num";
+  meta.textContent = `${RARITY[l.rar].name} ・ Lv ${lv}` + (label ? ` ・ ${label}` : "");
+  head.append(name, meta);
+  const good = document.createElement("div");
+  good.className = "law-good num";
+  good.textContent = `＋ ${l.good(lv)}`;
+  d.append(head, good);
+  if (l.bad) {
+    const bad = document.createElement("div");
+    bad.className = "law-bad";
+    bad.textContent = `− ${l.bad}`;
+    d.append(bad);
+  }
+  return d;
+}
+
 function renderBH() {
-  if (S.cycleStardust >= BH_REQ / 2 || S.blackholes > 0) S.bhSeen = true;
+  if (S.cycleStardust >= bhReq() / 2 || S.blackholes > 0) S.bhSeen = true;
   const tab = $("bhTab");
   tab.textContent = S.bhSeen ? "ブラックホール" : "？？？";
   tab.disabled = !S.bhSeen;
@@ -604,11 +824,11 @@ function renderBH() {
   if ($("panel-bh").hidden) return;
 
   $("bhMass").textContent = `${fmt(S.mass)} 質量`;
-  $("bhBar").style.width = Math.min(100, S.cycleStardust / BH_REQ * 100) + "%";
+  $("bhBar").style.width = Math.min(100, S.cycleStardust / bhReq() * 100) + "%";
   const g = massGainFor(S.cycleStardust);
   $("bhProgress").textContent = g > 0
     ? `この周期で手に入れた星屑 ${fmt(S.cycleStardust)}。質量がもう1つ増えるまで あと ${fmt(Math.ceil(massNextAt(g) - S.cycleStardust))}`
-    : `この周期で手に入れた星屑 ${fmt(S.cycleStardust)} / ${BH_REQ}`;
+    : `この周期で手に入れた星屑 ${fmt(S.cycleStardust)} / ${bhReq()}`;
   const btn = $("bhBtn");
   btn.disabled = g === 0;
   btn.textContent = g > 0 ? `ブラックホールを起こす（質量 +${fmt(g)}）` : "ブラックホールを起こす";
@@ -654,7 +874,7 @@ function goalText() {
     }
   }
   const g = snGain();
-  if (g === 0) return `超新星まで 恒星あと <strong>${fmt(SN_REQ - S.amt[2])}</strong>`;
+  if (g === 0) return `超新星まで 恒星あと <strong>${fmt(snReq() - S.amt[2])}</strong>`;
   if (hintActive() && pastPeak()) return `粘るより<strong>超新星を起こした方が速そう</strong>（星屑 +${snGainText()}）`;
   return `超新星を起こすと 星屑 <strong>+${snGainText()}</strong>`;
 }
@@ -719,16 +939,16 @@ function render() {
   // ゲージ：次に獲得量が+1されるまでの進み具合。恒星10倍ごとなので対数で測る（最初の1つ目までは普通に割合）
   const b0 = snBase();
   let ratio;
-  if (b0 === 0) ratio = Math.min(1, S.amt[2] / SN_REQ);
+  if (b0 === 0) ratio = Math.min(1, S.amt[2] / snReq());
   else {
-    const lo = SN_REQ * Math.pow(SN_GAIN_SCALE, b0 - 1);
+    const lo = snReq() * Math.pow(SN_GAIN_SCALE, b0 - 1);
     ratio = Math.log(S.amt[2] / lo) / Math.log(SN_GAIN_SCALE);
   }
   $("snBar").style.width = (Math.max(0, Math.min(1, ratio)) * 100) + "%";
   const g = snGain();
   $("snProgress").textContent = g > 0
-    ? `恒星 ${fmt(S.amt[2])}。星屑がもう1段階増えるまで 恒星 ${fmt(Math.ceil(SN_REQ * Math.pow(SN_GAIN_SCALE, snBase()) - S.amt[2]))}`
-    : `恒星 ${fmt(S.amt[2])} / ${fmt(SN_REQ)}`;
+    ? `恒星 ${fmt(S.amt[2])}。星屑がもう1段階増えるまで 恒星 ${fmt(Math.ceil(snReq() * Math.pow(SN_GAIN_SCALE, snBase()) - S.amt[2]))}`
+    : `恒星 ${fmt(S.amt[2])} / ${fmt(snReq())}`;
   const btn = $("novaBtn");
   btn.disabled = g === 0;
   btn.textContent = g > 0 ? `超新星を起こす（星屑 +${snGainText()}）` : "超新星を起こす";
@@ -748,10 +968,11 @@ function render() {
     : "";
   renderShop();
   renderBH();
+  renderCrunch();
   // 自動超新星の設定
   const an = $("autoNovaRow");
   an.hidden = !mlvl("autoNova");
-  $("autoNovaDesc").textContent = `恒星が ${S.autoNovaAt} 段階目（${fmt(SN_REQ * Math.pow(SN_GAIN_SCALE, S.autoNovaAt - 1))}個）に届いたら自動で起こす`;
+  $("autoNovaDesc").textContent = `恒星が ${S.autoNovaAt} 段階目（${fmt(snReq() * Math.pow(SN_GAIN_SCALE, S.autoNovaAt - 1))}個）に届いたら自動で起こす`;
   $("anToggle").textContent = S.autoNovaOn ? "ON" : "OFF";
   $("anToggle").setAttribute("aria-pressed", S.autoNovaOn);
   const ab = $("autoBtn");
@@ -765,7 +986,7 @@ document.querySelectorAll(".tab[data-tab]").forEach(tab => {
   tab.addEventListener("click", () => {
     if (tab.disabled) return;
     document.querySelectorAll(".tab").forEach(t => t.setAttribute("aria-selected", t === tab ? "true" : "false"));
-    ["matter", "nova", "bh", "settings"].forEach(k => $("panel-" + k).hidden = k !== tab.dataset.tab);
+    ["matter", "nova", "bh", "crunch", "settings"].forEach(k => $("panel-" + k).hidden = k !== tab.dataset.tab);
     if (tab.dataset.tab === "bh") resizeBH();
     syncSettings();
   });
@@ -774,6 +995,20 @@ document.querySelectorAll(".tab[data-tab]").forEach(tab => {
 $("buyMax").addEventListener("click", () => { buyMax(); render(); });
 $("autoBtn").addEventListener("click", () => { S.autoOn = !S.autoOn; render(); });
 $("bhBtn").addEventListener("click", () => { blackhole(); render(); });
+let crunchArmed = false;
+$("crBtn").addEventListener("click", () => {
+  // 全部リセットされるので、2回押しで確定
+  if (!crunchArmed) {
+    crunchArmed = true;
+    $("crBtn").textContent = "もう一度押すとビッグクランチ（全部リセット）";
+    setTimeout(() => { crunchArmed = false; render(); }, 4000);
+    return;
+  }
+  crunchArmed = false;
+  bigCrunch();
+  render();
+});
+$("pullBtn").addEventListener("click", () => { if (pullLaw()) { pullAnimAt = performance.now(); render(); } });
 $("shootingStar").addEventListener("click", catchStar);
 $("goExport").addEventListener("click", () => {
   document.querySelector('.tab[data-tab="settings"]').click();
@@ -1152,7 +1387,7 @@ const STAR_DURATION = 7;                     // 画面を横切る秒数
 let starNextAt = performance.now() + (20 + Math.random() * 40) * 1000; // 最初の1つは早めに
 let star = null;
 function scheduleStar(now) {
-  starNextAt = now + (STAR_MIN_GAP + Math.random() * (STAR_MAX_GAP - STAR_MIN_GAP)) * 1000;
+  starNextAt = now + (STAR_MIN_GAP + Math.random() * (STAR_MAX_GAP - STAR_MIN_GAP)) * lawStarGap() * 1000;
 }
 function updateStar(now) {
   const el = $("shootingStar");
