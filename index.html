@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>宇宙インクリメンタル（仮）</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #e9e8f2;
+  --surface: #f6f5fb;
+  --surface-2: #dedcec;
+  --ink: #1d1a3a;
+  --muted: #615d86;
+  --line: #cbc8de;
+  --accent: #a4560f;
+  --accent-ink: #fffaf2;
+  --star: #e8962c;
+  --planet: #4b5fc8;
+  --rock: #7b7598;
+  --speck: #3b3666;
+  --nova: #c2366a;
+  --bh-core: #0d0b1f;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #15132c;
+    --surface: #1e1b3a;
+    --surface-2: #2a2650;
+    --ink: #ecebf7;
+    --muted: #a19dc4;
+    --line: #353060;
+    --accent: #f2b450;
+    --accent-ink: #1d1530;
+    --star: #ffc261;
+    --planet: #8696f4;
+    --rock: #a9a3c8;
+    --speck: #d9d6f2;
+    --nova: #ff7fa8;
+    --bh-core: #000000;
+  }
+}
+:root[data-theme="dark"] {
+    color-scheme: dark;
+    --bg: #15132c;
+    --surface: #1e1b3a;
+    --surface-2: #2a2650;
+    --ink: #ecebf7;
+    --muted: #a19dc4;
+    --line: #353060;
+    --accent: #f2b450;
+    --accent-ink: #1d1530;
+    --star: #ffc261;
+    --planet: #8696f4;
+    --rock: #a9a3c8;
+    --speck: #d9d6f2;
+    --nova: #ff7fa8;
+    --bh-core: #000000;
+  }
+* { box-sizing: border-box; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+html, body { margin: 0; background: var(--bg); color: var(--ink); }
+body {
+  font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic UI", "Meiryo", sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-tap-highlight-color: transparent;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 0 0 calc(24px + env(safe-area-inset-bottom));
+}
+.num { font-variant-numeric: tabular-nums; }
+
+/* 上部：塵の量 */
+.top {
+  position: sticky;
+  top: env(safe-area-inset-top, 0px);
+  z-index: 5;
+  background: var(--bg);
+  border-bottom: 1px solid var(--line);
+  padding: 12px 20px 10px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.dust-amount {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+.dust-unit { font-size: 15px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+.dust-rate { color: var(--muted); font-size: 13px; text-align: right; }
+.stardust-chip { color: var(--nova); font-weight: 600; }
+
+/* 宇宙ビジュアル */
+.universe-wrap { position: relative; height: 34vh; min-height: 220px; }
+#universe { width: 100%; height: 100%; display: block; }
+.goal {
+  position: absolute;
+  left: 16px; right: 16px; bottom: 8px;
+  text-align: center;
+  font-size: 13px;
+  color: var(--muted);
+}
+.goal strong { color: var(--ink); font-weight: 600; }
+#flash {
+  position: fixed; inset: 0;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1.4s ease-out;
+}
+
+/* タブ */
+.tabs {
+  display: flex;
+  margin: 8px 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+.tab {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 14px;
+  padding: 10px 4px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+.tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+.tab:disabled { opacity: 0.45; cursor: default; }
+.panel { padding: 12px 16px; }
+.panel[hidden] { display: none; }
+
+/* 生成器の行 */
+.tier {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.tier:last-child { border-bottom: none; }
+.tier-name { font-weight: 700; font-size: 16px; }
+.tier-name .mult { font-weight: 500; font-size: 13px; color: var(--accent); margin-left: 6px; }
+.tier-info { font-size: 13px; color: var(--muted); }
+.tier-progress {
+  height: 3px; background: var(--surface-2); border-radius: 2px; margin-top: 6px; overflow: hidden;
+}
+.tier-progress span { display: block; height: 100%; background: var(--accent); width: 0; }
+.tier-buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.tier-buttons button.buy { min-width: 0; text-align: center; }
+.tier-progress + .tier-info { margin-top: 4px; font-size: 12px; }
+.tier.locked { opacity: 0.5; }
+.tier.locked .tier-buttons { display: none; }
+
+button.buy, button.action {
+  font: inherit;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink);
+  border-radius: 10px;
+  padding: 6px 12px;
+  min-height: 44px;
+  min-width: 112px;
+  text-align: right;
+  cursor: pointer;
+  line-height: 1.25;
+}
+button.buy small { display: block; font-size: 12px; color: var(--muted); }
+button.buy.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.buy.primary small { color: var(--accent-ink); opacity: 0.8; }
+button:disabled { opacity: 0.4; cursor: default; }
+button:focus-visible, .tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.row-actions { display: flex; justify-content: flex-end; margin-bottom: 4px; }
+button.action { min-width: 0; text-align: center; padding: 6px 16px; }
+
+/* 超新星 */
+.sn-big { font-size: 28px; font-weight: 700; color: var(--nova); }
+.sn-text { color: var(--muted); font-size: 14px; margin: 4px 0 14px; }
+.sn-bar { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; margin: 10px 0 6px; }
+.sn-bar span { display: block; height: 100%; background: var(--nova); width: 0; }
+button.nova {
+  width: 100%;
+  font: inherit;
+  font-weight: 700;
+  font-size: 16px;
+  padding: 14px;
+  border-radius: 12px;
+  border: none;
+  background: var(--nova);
+  color: #fff;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+.row-actions { gap: 8px; }
+.sn-preview { text-align: center; margin-top: 6px; }
+.rate-box {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.rate-box.peak { border-color: var(--nova); }
+.rate-main { font-weight: 600; }
+.rate-sub { font-size: 13px; color: var(--muted); }
+.rate-box.peak .rate-sub { color: var(--nova); }
+.shop-title { font-size: 16px; margin: 28px 0 4px; }
+.up {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+.up:last-child { border-bottom: none; }
+.up-name { font-weight: 700; }
+.up-name .lv { font-weight: 500; font-size: 13px; color: var(--muted); margin-left: 6px; }
+.up-desc { font-size: 13px; color: var(--muted); }
+.up-effect { font-size: 13px; }
+.up-effect b { color: var(--nova); font-weight: 600; }
+.up button { grid-row: 1 / span 3; grid-column: 2; }
+button.buy.sd { background: var(--nova); border-color: var(--nova); color: #fff; text-align: center; min-width: 88px; }
+button.buy.sd small { color: #fff; opacity: 0.85; }
+.up.maxed button { visibility: hidden; }
+
+/* ブラックホール */
+.mass-chip { color: var(--accent); font-weight: 600; }
+.bh-wrap { height: 220px; margin: 0 -16px 8px; }
+#bhCanvas { width: 100%; height: 100%; display: block; }
+.mass-big { color: var(--accent); }
+button.nova.bh { background: var(--ink); color: var(--bg); }
+.ring-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.ring-row:last-child { border-bottom: none; }
+.ring-row .up-effect b { color: var(--accent); }
+.ring-row .laps { font-size: 13px; color: var(--muted); text-align: right; align-self: center; grid-row: 1 / span 2; grid-column: 2; }
+.ring-row.locked { opacity: 0.5; }
+.ring-bar { grid-column: 1 / -1; height: 3px; background: var(--surface-2); border-radius: 2px; overflow: hidden; }
+.ring-bar span { display: block; height: 100%; background: var(--accent); width: 0; }
+button.buy.mass { background: var(--ink); border-color: var(--ink); color: var(--bg); text-align: center; min-width: 88px; }
+button.buy.mass small { color: var(--bg); opacity: 0.8; }
+.autonova { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 0 0; }
+.autonova p { margin: 0; }
+
+/* 設定 */
+.setting { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); gap: 12px; }
+.setting:last-child { border-bottom: none; }
+.setting p { margin: 0; }
+.setting .desc { font-size: 12px; color: var(--muted); }
+.seg { display: flex; gap: 4px; }
+.seg button { font: inherit; font-size: 13px; padding: 6px 10px; min-height: 36px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.setting.col { flex-direction: column; align-items: stretch; }
+#saveText {
+  width: 100%;
+  font: 12px/1.4 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  resize: vertical;
+  word-break: break-all;
+}
+#saveText:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+button.danger { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 36px; border-radius: 8px; border: 1px solid var(--nova); color: var(--nova); background: none; cursor: pointer; }
+
+/* 留守中トースト */
+.notice {
+  margin: 10px 16px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--nova);
+  border-radius: 10px;
+  background: var(--surface);
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  font-size: 13px;
+}
+.notice p { margin: 0; flex: 1; min-width: 0; }
+.notice strong { color: var(--nova); }
+.tab-cover {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  background: var(--bg);
+  display: grid;
+  place-items: center;
+  padding: 24px max(16px, env(safe-area-inset-left, 0px)) 24px max(16px, env(safe-area-inset-right, 0px));
+}
+.tab-cover-box { max-width: 340px; text-align: center; color: var(--muted); }
+.tab-cover-title { font-size: 18px; font-weight: 700; color: var(--ink); margin: 0 0 6px; }
+.toast {
+  position: fixed;
+  left: 50%; bottom: calc(20px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  background: var(--ink); color: var(--bg);
+  padding: 12px 18px; border-radius: 12px;
+  font-size: 14px; max-width: 90vw;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.3s;
+}
+.toast.show { opacity: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  #flash { transition: none; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div>
+    <span class="dust-amount num" id="dust">10</span><span class="dust-unit">塵</span>
+  </div>
+  <div class="dust-rate">
+    <div class="num" id="rate">毎秒 0</div>
+    <div class="stardust-chip num" id="sdChip" hidden></div>
+    <div class="mass-chip num" id="massChip" hidden></div>
+  </div>
+</header>
+
+<div class="notice" id="storageWarn" hidden>
+  <p><strong>このブラウザではセーブできていません。</strong>閉じると進み具合が消えます。設定タブの「書き出す」で控えを取っておくか、別のブラウザで開いてね。</p>
+  <button class="action" id="goExport">書き出しへ</button>
+</div>
+
+<div class="tab-cover" id="tabCover" hidden>
+  <div class="tab-cover-box">
+    <p class="tab-cover-title">別のタブで開かれています</p>
+    <p>セーブが上書きされないように、このタブは止めてあります。</p>
+    <button class="nova" id="takeOver">このタブで遊ぶ</button>
+  </div>
+</div>
+
+<div class="universe-wrap">
+  <canvas id="universe" aria-label="今の宇宙の様子"></canvas>
+  <div class="goal" id="goal"></div>
+</div>
+
+<nav class="tabs" role="tablist">
+  <button class="tab" role="tab" aria-selected="true" data-tab="matter">物質</button>
+  <button class="tab" role="tab" aria-selected="false" data-tab="nova" id="novaTab">？？？</button>
+  <button class="tab" role="tab" aria-selected="false" data-tab="bh" id="bhTab" disabled>？？？</button>
+  <button class="tab" role="tab" aria-selected="false" data-tab="settings">設定</button>
+</nav>
+
+<section class="panel" id="panel-matter">
+  <div class="row-actions">
+    <button class="action" id="autoBtn" hidden>自動購入 ON</button>
+    <button class="action" id="buyMax">買えるだけ買う</button>
+  </div>
+  <div id="tiers"></div>
+</section>
+
+<section class="panel" id="panel-nova" hidden>
+  <div class="sn-big num" id="snStardust">0 星屑</div>
+  <p class="sn-text">恒星を集めた状態で超新星を起こすと、物質がすべてリセットされる代わりに星屑が手に入る。星屑は下のショップで強化に使える。ショップの強化は超新星でリセットされない。</p>
+  <div class="sn-bar"><span id="snBar"></span></div>
+  <div class="tier-info num" id="snProgress"></div>
+  <button class="nova" id="novaBtn" disabled>超新星を起こす</button>
+  <div class="tier-info num sn-preview" id="snPreview"></div>
+  <div class="rate-box" id="rateBox" hidden>
+    <div class="rate-main num" id="rateMain"></div>
+    <div class="rate-sub num" id="rateSub"></div>
+  </div>
+  <div class="autonova" id="autoNovaRow" hidden>
+    <div><p class="up-name">自動超新星</p><p class="up-desc num" id="autoNovaDesc"></p></div>
+    <div class="seg">
+      <button id="anMinus" aria-label="基準を下げる">−</button>
+      <button id="anPlus" aria-label="基準を上げる">＋</button>
+      <button id="anToggle"></button>
+    </div>
+  </div>
+  <h2 class="shop-title">星屑ショップ</h2>
+  <div id="shop"></div>
+</section>
+
+<section class="panel" id="panel-bh" hidden>
+  <div class="bh-wrap"><canvas id="bhCanvas" aria-label="ブラックホールと降着円盤"></canvas></div>
+  <div class="sn-big num mass-big" id="bhMass">0 質量</div>
+  <p class="sn-text">星屑を集めた状態でブラックホールを起こすと、物質・星屑・星屑ショップの強化がすべてリセットされる代わりに「質量」が手に入る。ブラックホールのまわりには降着円盤ができて、1周するたびに倍率が上がっていく。円盤の周回数は超新星では消えず、ブラックホールで0に戻る。</p>
+  <div class="sn-bar"><span id="bhBar"></span></div>
+  <div class="tier-info num" id="bhProgress"></div>
+  <button class="nova bh" id="bhBtn" disabled>ブラックホールを起こす</button>
+  <h2 class="shop-title">降着円盤</h2>
+  <div id="rings"></div>
+  <h2 class="shop-title">質量ショップ</h2>
+  <div id="mshop"></div>
+</section>
+
+<section class="panel" id="panel-settings" hidden>
+  <div class="setting">
+    <div><p>数字の表記</p><p class="desc">略記は K / M / B…、指数は 1.23e45</p></div>
+    <div class="seg" id="notationSeg">
+      <button data-v="suffix">略記</button>
+      <button data-v="sci">指数</button>
+    </div>
+  </div>
+  <div class="setting">
+    <div><p>起こしどきのヒント</p><p class="desc">「粘るより超新星を起こした方が速そう」を出すか。ブラックホールを起こすと出るようになる</p></div>
+    <div class="seg" id="hintSeg">
+      <button data-v="on">ON</button>
+      <button data-v="off">OFF</button>
+    </div>
+  </div>
+  <div class="setting">
+    <div><p>開発用スピード</p><p class="desc">バランス確認用。遊んでいる間だけ速くなる</p></div>
+    <div class="seg" id="speedSeg">
+      <button data-v="1">×1</button>
+      <button data-v="10">×10</button>
+      <button data-v="100">×100</button>
+    </div>
+  </div>
+  <div class="setting col">
+    <div><p>セーブデータの書き出し・読み込み</p><p class="desc">「書き出す」で今のセーブが下の欄に出て、コピーされる。別の端末やページで欄に貼り付けて「読み込む」と続きから遊べる</p></div>
+    <textarea id="saveText" rows="3" spellcheck="false" placeholder="ここにセーブの文字列が出る／貼り付ける"></textarea>
+    <div class="seg">
+      <button id="exportBtn">書き出す</button>
+      <button id="importBtn">読み込む</button>
+    </div>
+  </div>
+  <div class="setting">
+    <div><p>セーブデータを消す</p><p class="desc">最初からやり直す</p></div>
+    <button class="danger" id="wipe">消去</button>
+  </div>
+</section>
+
+<div id="flash"></div>
+<div class="toast" id="toast"></div>
+
+<script src="game.js"></script>
+</body>
+</html>
