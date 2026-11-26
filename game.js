@@ -1001,7 +1001,8 @@ function drawUniverse(now) {
   if (stage === 4) {
     // 銀河：銀河の節目で腕が増え、銀河や恒星を買うほど星が濃くなる
     const nArms = 2 + Math.min(3, msN(3));
-    const rot = t * 0.06;
+    // 渦の腕は外へ行くほど時計回りに巻いているので、回転は反時計回り（腕が回転の後ろになびく向き）
+    const rot = -t * 0.06;
     const n = Math.min(arms.length, 160 + S.bought[3] * 5 + Math.floor(S.bought[2] / 2));
     ctx.fillStyle = colors["--star"];
     for (let k = 0; k < n; k++) {
