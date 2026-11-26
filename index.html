@@ -150,6 +150,16 @@ body {
 }
 .tab[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
 .tab:disabled { opacity: 0.45; cursor: default; }
+/* 起こせるようになったブラックホールのタブに印を付ける */
+.tab.ready::after {
+  content: "";
+  display: inline-block;
+  width: 7px; height: 7px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--nova);
+  vertical-align: 2px;
+}
 .panel { padding: 12px 16px; }
 .panel[hidden] { display: none; }
 

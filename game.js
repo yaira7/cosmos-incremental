@@ -21,7 +21,8 @@ const AUTO_BUDGET = 0.1;
 
 // ===== ブラックホールと降着円盤 =====
 const BH_REQ = 100;                                   // この周期で手に入れた星屑がこれだけあると起こせる
-const massGainFor = sd => sd >= BH_REQ ? Math.floor(Math.sqrt(sd / 25)) : 0; // 100で2、225で3、400で4…
+const MASS_PER = 50;                                  // 星屑がこれだけ増えるごとに質量+1
+const massGainFor = sd => sd >= BH_REQ ? Math.floor(sd / MASS_PER) : 0; // 100で2、150で3、200で4…
 const RINGS = [
   { name: "内側の円盤", period: 10,  per: 0.1,  target: "塵の生産" },
   { name: "中間の円盤", period: 45,  per: 0.05, target: "惑星・恒星・銀河の生産" },
@@ -41,7 +42,7 @@ const MUPGRADES = [
   { id: "spd2",     name: "外側の円盤を加速", desc: "外側の円盤が速く回る", max: 10, needs: "ring2",
     cost: lv => 3 * Math.pow(2, lv), effect: lv => `1周 ${ringPeriodAt(2, lv).toFixed(1)}秒` },
   { id: "autoNova", name: "自動超新星",       desc: "決めた星屑の量に届いたら、自動で超新星を起こす", max: 1,
-    cost: () => 3,                   effect: lv => lv ? "あり" : "なし" },
+    cost: () => 2,                   effect: lv => lv ? "あり" : "なし" },
   { id: "keepAuto", name: "自動購入の記憶",   desc: "ブラックホールを起こしても、星屑ショップの自動購入が残る", max: 1,
     cost: () => 2,                   effect: lv => lv ? "残る" : "残らない" },
 ];
@@ -65,7 +66,7 @@ const UPGRADES = [
   { id: "compress", name: "圧縮",       desc: "1個ごとの値上がりがゆるやかになる", max: 5,
     cost: lv => 5 * Math.pow(2, lv),  effect: lv => `値上がり幅 −${Math.round((1 - Math.pow(COMPRESS_RATE, lv)) * 100)}%` },
   { id: "auto",     name: "自動購入",   desc: "下の段から順に、自動で買ってくれるようになる", max: 4,
-    cost: lv => 2 * Math.pow(3, lv),  effect: lv => lv === 0 ? "なし" : TIERS.slice(0, lv).map(t => t.name).join("・") },
+    cost: lv => Math.pow(2, lv),      effect: lv => lv === 0 ? "なし" : TIERS.slice(0, lv).map(t => t.name).join("・") },
   { id: "memory",   name: "恒星の記憶", desc: "超新星でもらえる星屑が増える。端数は確率で+1", max: 3,
     cost: lv => [20, 50, 120][lv],    effect: lv => `獲得する星屑 ×${memMultAt(lv)}` },
 ];
@@ -99,6 +100,7 @@ function freshState() {
     rings: [0, 0, 0],   // 各円盤の周回数（小数部分は今の周の進み具合）
     mup: freshMup(),
     autoNovaOn: true,
+    bhNotified: false,  // この周期で「ブラックホールを起こせる」を知らせたか
     hintOn: true,       // 起こしどきのヒントを出すか（ブラックホール後のみ）
     autoNovaAt: 3,      // 自動超新星：星屑がこの数以上もらえるときに起こす
     runTime: 0,         // この周回（前の超新星から）の経過秒数
@@ -221,7 +223,7 @@ function supernova(silent) {
   if (!silent) toast(`超新星！ 星屑 +${fmt(g)}`);
   const keep = Object.assign(keepMeta(), {
     stardust: S.stardust + g, stardustTotal: S.stardustTotal + g, supernovas: S.supernovas + 1,
-    cycleStardust: S.cycleStardust + g, rings: S.rings, up: S.up, autoOn: S.autoOn, novaSeen: true,
+    cycleStardust: S.cycleStardust + g, bhNotified: S.bhNotified, rings: S.rings, up: S.up, autoOn: S.autoOn, novaSeen: true,
   });
   S = Object.assign(freshState(), keep);
   S.afterglow = AFTERGLOW_TIME;
@@ -581,13 +583,20 @@ function renderBH() {
   const tab = $("bhTab");
   tab.textContent = S.bhSeen ? "ブラックホール" : "？？？";
   tab.disabled = !S.bhSeen;
+  // ブラックホールを起こせるようになったら知らせる（周期ごとに1回）。起こせる間はタブに印を付ける
+  const ready = massGainFor(S.cycleStardust) > 0;
+  if (ready && !S.bhNotified) {
+    S.bhNotified = true;
+    toast(`ブラックホールを起こせるようになった！（質量 +${fmt(massGainFor(S.cycleStardust))}）`);
+  }
+  tab.classList.toggle("ready", ready);
   if ($("panel-bh").hidden) return;
 
   $("bhMass").textContent = `${fmt(S.mass)} 質量`;
   $("bhBar").style.width = Math.min(100, S.cycleStardust / BH_REQ * 100) + "%";
   const g = massGainFor(S.cycleStardust);
   $("bhProgress").textContent = g > 0
-    ? `この周期で手に入れた星屑 ${fmt(S.cycleStardust)}。質量がもう1つ増えるまで あと ${fmt(25 * Math.pow(g + 1, 2) - S.cycleStardust)}`
+    ? `この周期で手に入れた星屑 ${fmt(S.cycleStardust)}。質量がもう1つ増えるまで あと ${fmt(MASS_PER * (g + 1) - S.cycleStardust)}`
     : `この周期で手に入れた星屑 ${fmt(S.cycleStardust)} / ${BH_REQ}`;
   const btn = $("bhBtn");
   btn.disabled = g === 0;
