@@ -21,8 +21,12 @@ const AUTO_BUDGET = 0.1;
 
 // ===== ブラックホールと降着円盤 =====
 const BH_REQ = 100;                                   // この周期で手に入れた星屑がこれだけあると起こせる
-const MASS_PER = 50;                                  // 星屑がこれだけ増えるごとに質量+1
-const massGainFor = sd => sd >= BH_REQ ? Math.floor(sd / MASS_PER) : 0; // 100で2、150で3、200で4…
+// 質量は「星屑が2倍になるごとに+1」：100で2、200で3、400で4、800で5…
+// 超新星層が完成して星屑の増え方が一定になると、+1までの時間がどんどん倍になるので、
+// 「どこかで止めてブラックホールを起こした方が得」になる
+const MASS_BASE = 25;
+const massGainFor = sd => sd >= BH_REQ ? Math.floor(Math.log2(sd / MASS_BASE)) : 0;
+const massNextAt = g => MASS_BASE * Math.pow(2, g + 1); // 質量が g+1 になる星屑の量
 const RINGS = [
   { name: "内側の円盤", period: 10,  per: 0.1,  target: "塵の生産" },
   { name: "中間の円盤", period: 45,  per: 0.05, target: "惑星・恒星・銀河の生産" },
@@ -603,7 +607,7 @@ function renderBH() {
   $("bhBar").style.width = Math.min(100, S.cycleStardust / BH_REQ * 100) + "%";
   const g = massGainFor(S.cycleStardust);
   $("bhProgress").textContent = g > 0
-    ? `この周期で手に入れた星屑 ${fmt(S.cycleStardust)}。質量がもう1つ増えるまで あと ${fmt(MASS_PER * (g + 1) - S.cycleStardust)}`
+    ? `この周期で手に入れた星屑 ${fmt(S.cycleStardust)}。質量がもう1つ増えるまで あと ${fmt(Math.ceil(massNextAt(g) - S.cycleStardust))}`
     : `この周期で手に入れた星屑 ${fmt(S.cycleStardust)} / ${BH_REQ}`;
   const btn = $("bhBtn");
   btn.disabled = g === 0;
