@@ -80,9 +80,10 @@ const SAVE_KEY = "cosmos-save-v2";
 // ===== 状態 =====
 function freshState() {
   return {
-    dust: 10,
-    amt: [0, 0, 0, 0],
-    bought: [0, 0, 0, 0],
+    // 超新星やブラックホールのたびに最初の岩を買う手間を省くため、岩1個を持った状態で始まる
+    dust: 0,
+    amt: [1, 0, 0, 0],
+    bought: [1, 0, 0, 0],
     stardust: 0,        // 手持ちの星屑（ショップで使う）
     stardustTotal: 0,   // これまでに手に入れた星屑の合計（次の層で使う予定）
     supernovas: 0,
