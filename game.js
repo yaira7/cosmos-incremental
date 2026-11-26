@@ -60,9 +60,9 @@ const ringLaps = i => Math.floor((S.rings[i] || 0) + 1e-9);
 const ringMult = i => ringActive(i) ? 1 + RINGS[i].per * ringLaps(i) : 1;
 
 // ===== ビッグクランチと法則カード =====
-const CRUNCH_REQ = 1e40;         // 1回の周回で塵がこれだけ貯まったらビッグクランチを起こせる
-// もらえる宇宙の種：1e40で3つ、そこから塵が10万倍（e+5）になるごとに+1
-const seedGainFor = peak => peak >= CRUNCH_REQ ? 3 + Math.floor((Math.log10(peak) - 40) / 5) : 0;
+const CRUNCH_REQ = 1e50;         // 1回の周回で塵がこれだけ貯まったらビッグクランチを起こせる
+// もらえる宇宙の種：1e50で3つ、そこから塵が100億倍（e+10）になるごとに+1
+const seedGainFor = peak => peak >= CRUNCH_REQ ? 3 + Math.floor((Math.log10(peak) - 50) / 10) : 0;
 const GACHA_COST = 1;            // ガチャ1回に使う宇宙の種
 const PITY = 10;                 // この回数のうちにエピックが出なければ、10回目はエピック確定
 const LAW_MAX = 5;               // カードの最大レベル（ダブるとレベルが上がる）
@@ -112,9 +112,9 @@ const CRUNCH_MILESTONES = [
 // cost(lv) = 次のレベルの値段、max = 最大レベル（なしなら無限）
 const UPGRADES = [
   { id: "glow",     name: "岩の輝き",   desc: "岩が生む塵が増える",
-    cost: lv => 1 + lv,               effect: lv => `塵の生産 ×${1 + lv}` },
+    cost: lv => Math.ceil(Math.pow(1.7, lv)),     effect: lv => `塵の生産 ×${1 + lv}` },
   { id: "gravity",  name: "重力",       desc: "節目の倍率が強くなる",
-    cost: lv => 1 + lv,               effect: lv => `節目1つごと ×${milestoneMultAt(lv).toFixed(2)}` },
+    cost: lv => Math.ceil(2 * Math.pow(1.7, lv)), effect: lv => `節目1つごと ×${milestoneMultAt(lv).toFixed(2)}` },
   { id: "afterglow", name: "残光",      desc: `超新星の直後、塵の生産が一時的に跳ね上がる（${AFTERGLOW_TIME}秒かけて元に戻る）`, max: 5,
     cost: lv => 1 + lv,               effect: lv => lv === 0 ? "なし" : `直後の塵の生産 ×${afterglowPeakAt(lv)}` },
   { id: "compress", name: "圧縮",       desc: "1個ごとの値上がりがゆるやかになる", max: 5,
@@ -167,6 +167,7 @@ function freshState() {
     pity: 0,            // エピックが出ていない回数
     lastPull: null,     // 最後に引いたカード（表示用）
     flashOn: true,      // 超新星などで画面をフラッシュさせるか
+    costV3: true,       // 輝き・重力が値上げされてからのセーブか
     hintOn: true,       // 起こしどきのヒントを出すか（ブラックホール後のみ）
     autoNovaAt: 3,      // 自動超新星：星屑がこの数以上もらえるときに起こす
     runTime: 0,         // この周回（前の超新星から）の経過秒数
@@ -311,7 +312,7 @@ function buyMax() {
 }
 
 // 超新星・ブラックホールで消えないもの
-const META_KEYS = ["flashOn", "seeds", "cards", "laws", "crunches", "crunchSeen", "pity", "lastPull", "windBoost", "notation", "speed", "last", "mass", "massTotal", "blackholes", "bhSeen", "mup", "autoNovaOn", "autoNovaAt", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2"];
+const META_KEYS = ["costV3", "flashOn", "seeds", "cards", "laws", "crunches", "crunchSeen", "pity", "lastPull", "windBoost", "notation", "speed", "last", "mass", "massTotal", "blackholes", "bhSeen", "mup", "autoNovaOn", "autoNovaAt", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2"];
 function keepMeta() { const k = {}; META_KEYS.forEach(key => k[key] = S[key]); return k; }
 
 // silent: 留守中の計算など、何も出さない / auto: 自動超新星（フラッシュとお知らせは出さず、保存はいつものタイミングで）
@@ -361,7 +362,7 @@ function blackhole() {
 }
 
 // ビッグクランチで消えないもの（設定・記録・法則カードまわり）
-const CRUNCH_KEYS = ["flashOn", "notation", "speed", "last", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2",
+const CRUNCH_KEYS = ["costV3", "flashOn", "notation", "speed", "last", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2",
   "seeds", "cards", "laws", "pity", "lastPull", "autoNovaOn", "autoNovaAt", "autoOn", "windBoost"];
 function bigCrunch() {
   const g = seedGainFor(S.runPeak);
@@ -562,6 +563,16 @@ function applySave(d) {
       S.up = Object.assign(freshUp(), d.up || {});
       S.mup = Object.assign(freshMup(), d.mup || {});
       if (!d.cards) S.cards = {};
+      if (!d.costV3) {
+        // 輝き・重力を値上げしたので、旧価格（1, 2, 3…）で払い戻してLv0に戻す。
+        // 旧価格で育った今の周回（塵が桁違いに多い）も、ここでやり直しにする
+        const tri = n => n * (n + 1) / 2;
+        S.stardust += tri(S.up.glow || 0) + tri(S.up.gravity || 0);
+        S.up.glow = 0; S.up.gravity = 0;
+        const f = freshState();
+        ["dust", "amt", "bought", "runPeak", "runTime", "runBestRate", "runLastBase", "runJumpRate", "crunchNotified"].forEach(k => S[k] = f[k]);
+        S.costV3 = true;
+      }
       if (!Array.isArray(d.laws)) S.laws = [];
       if (!S.mup.autoNova && d.autoNovaAt === 5) S.autoNovaAt = 3; // 初期値を5→3に変えたので、まだ使っていない人は3に
       if (d.runTime === undefined) S.runTime = 0;
@@ -756,7 +767,7 @@ function renderCrunch() {
   $("crBar").style.width = Math.min(100, lg / Math.log10(CRUNCH_REQ) * 100) + "%";
   const g = seedGainFor(S.runPeak);
   $("crProgress").textContent = g > 0
-    ? `この周回の塵の最高 ${fmt(S.runPeak)}。種がもう1つ増えるまで 塵 ${fmt(Math.pow(10, 40 + 5 * (g - 2)))}`
+    ? `この周回の塵の最高 ${fmt(S.runPeak)}。種がもう1つ増えるまで 塵 ${fmt(Math.pow(10, 50 + 10 * (g - 2)))}`
     : `この周回の塵の最高 ${fmt(S.runPeak)} / ${fmt(CRUNCH_REQ)}`;
   const btn = $("crBtn");
   btn.disabled = g === 0;
