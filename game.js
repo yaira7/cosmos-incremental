@@ -201,7 +201,31 @@ const WIND_TIME = 30, WIND_MULT = 3;
 const windMult = i => i === 0 && S.windBoost > 0 ? WIND_MULT : 1;
 const lawMult = i => i === 0 ? lawRock() : lawUpper();
 const mult = i => msMult(i) * glowMult(i) * afterglowMult(i) * diskMult(i) * windMult(i) * lawMult(i);
-const rateOf = i => S.amt[i] * TIERS[i].prod * mult(i); // その段が毎秒生む量
+// ===== 数字の安全装置 =====
+// JavaScriptの数値は約1.8e308を超えると「Infinity（∞）」になり、0×∞ = NaN などで計算が壊れる。
+// セーブにもnullとして書かれてしまうので、すべての量を NUM_CAP で頭打ちにする。
+const NUM_CAP = 1e300;
+const safeNum = x => (typeof x !== "number" || Number.isNaN(x)) ? 0 : Math.max(-NUM_CAP, Math.min(NUM_CAP, x));
+let capWarned = false;
+function clampState() {
+  let hit = false;
+  const c = x => { const v = safeNum(x); if (v >= NUM_CAP) hit = true; return v; };
+  S.dust = c(S.dust);
+  S.amt = S.amt.map(c);
+  S.bought = S.bought.map(x => safeNum(x));
+  ["stardust", "stardustTotal", "cycleStardust", "mass", "massTotal", "seeds", "runPeak", "runTime", "runBestRate", "runJumpRate"]
+    .forEach(k => { S[k] = c(S[k]); });
+  S.rings = (S.rings || [0, 0, 0]).map(x => safeNum(x));
+  if (hit && !capWarned) {
+    capWarned = true;
+    toast("数字が上限（1e300）に届いたので、そこで止めています");
+  }
+}
+
+const rateOf = i => {
+  if (!(S.amt[i] > 0)) return 0;                      // 0 × ∞ = NaN を避ける
+  return Math.min(NUM_CAP, S.amt[i] * TIERS[i].prod * Math.min(NUM_CAP, mult(i))); // その段が毎秒生む量
+};
 // 圧縮で値上がり幅（r − 1）が1レベルごとに10%ずつ縮む
 const rOf = i => 1 + (TIERS[i].r - 1) * Math.pow(COMPRESS_RATE, lvl("compress")) * lawGrowth();
 const price = i => TIERS[i].base * Math.pow(rOf(i), S.bought[i]);
@@ -246,6 +270,7 @@ function tick(dt) {
   if (base > S.runLastBase) { S.runLastBase = base; S.runJumpRate = rate; }
   for (let k = 0; k < RINGS.length; k++) if (ringActive(k)) S.rings[k] += dt / ringPeriod(k);
   autoBuy(dt); // 留守中の計算でも自動購入が動く
+  clampState();
 }
 
 // count は個数、"max" なら買えるだけ
@@ -457,6 +482,7 @@ function setStorageOk(ok) {
 }
 async function save() {
   if (!tabActive) return; // 別のタブに譲ったあとは保存しない
+  clampState();
   const json = JSON.stringify(S);
   try {
     localStorage.setItem(SAVE_KEY, json);
@@ -532,6 +558,7 @@ function applySave(d) {
   {
     {
       S = Object.assign(freshState(), d);
+      clampState(); // 壊れた数（null・NaN・∞）が入っていたら直す
       S.up = Object.assign(freshUp(), d.up || {});
       S.mup = Object.assign(freshMup(), d.mup || {});
       if (!d.cards) S.cards = {};
@@ -564,6 +591,7 @@ function applySave(d) {
 // 書き出し：JSONをbase64にした文字列（「COSMOS1:」から始まる）
 const SAVE_PREFIX = "COSMOS1:";
 function exportSave() {
+  clampState();
   const json = JSON.stringify(S);
   return SAVE_PREFIX + btoa(unescape(encodeURIComponent(json)));
 }
