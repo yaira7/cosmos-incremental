@@ -27,7 +27,12 @@ const BH_REQ_BASE = 100;                              // この周期で手に�
 // 「どこかで止めてブラックホールを起こした方が得」になる
 const MASS_BASE = 25;
 const massBase = () => MASS_BASE * bhReqMult();
-const massGainFor = sd => sd >= bhReq() ? Math.floor(Math.log2(sd / massBase())) + lawMassBonus() : 0;
+const massGainFor = sd => {
+  if (sd < bhReq()) return 0;
+  let g = Math.max(0, Math.floor(Math.log2(sd / massBase()))) + lawMassBonus();
+  if ((S.blackholes || 0) === 0) g = Math.max(g, FIRST_BH_MASS + lawMassBonus());
+  return g;
+};
 const massNextAt = g => massBase() * Math.pow(2, g + 1 - lawMassBonus()); // 質量が g+1 になる星屑の量
 const RINGS = [
   { name: "内側の円盤", period: 10,  per: 0.1,  target: "塵の生産" },
@@ -62,6 +67,9 @@ const ringMult = i => ringActive(i) ? 1 + RINGS[i].per * ringLaps(i) : 1;
 
 // ===== ビッグクランチと法則カード =====
 const CRUNCH_REQ = 1e50;         // 1回の周回で塵がこれだけ貯まったらビッグクランチを起こせる
+const CRUNCH_MASS = 35;          // さらに、質量をこれだけ持っていること（使わずに貯めておく必要がある）
+const crunchMassOk = () => S.mass >= CRUNCH_MASS;
+const crunchReady = () => seedGainFor(S.runPeak) > 0 && crunchMassOk();
 // もらえる宇宙の種：1e50で3つ、そこから塵が100億倍（e+10）になるごとに+1
 const seedGainFor = peak => peak >= CRUNCH_REQ ? 3 + Math.floor((Math.log10(peak) - 50) / 10) : 0;
 const GACHA_COST = 1;            // ガチャ1回に使う宇宙の種
@@ -101,7 +109,9 @@ const bhReqMult = () => law("swell") ? 2 : 1;
 // ビッグクランチで回数が0に戻るので、また100から。
 // 周期の後半で星屑が一気に増えるので、要求が低いままだと「届いたらすぐ起こす」が損な選択になるため
 const BH_REQ_STEPS = 3;
-const bhReq     = () => BH_REQ_BASE * Math.pow(2, Math.min(S.blackholes || 0, BH_REQ_STEPS)) * bhReqMult();
+const FIRST_BH_REQ = 30;     // 最初のブラックホール（宇宙ごと）だけは軽く。序盤のつかみなので
+const FIRST_BH_MASS = 2;    // 最初のブラックホールでもらえる質量の最低保証（中間の円盤がすぐ買えるように）
+const bhReq     = () => ((S.blackholes || 0) === 0 ? FIRST_BH_REQ : BH_REQ_BASE * Math.pow(2, Math.min(S.blackholes, BH_REQ_STEPS))) * bhReqMult();
 const lawMassBonus = () => law("swell");
 const lawStarGap = () => law("meteor") ? Math.pow(0.85, law("meteor")) : 1;
 const lawNoAuto  = () => law("silent") > 0;
@@ -394,7 +404,7 @@ function resetUniverse(extra) {
 }
 function bigCrunch() {
   const g = seedGainFor(S.runPeak);
-  if (g <= 0) return;
+  if (g <= 0 || !crunchMassOk()) return;
   const choose = S.chooseOnCrunch !== false;
   resetUniverse({ seeds: S.seeds + g, crunches: S.crunches + 1 });
   if (choose) { S.choosing = true; S.lawDraft = S.laws.slice(); }
@@ -819,7 +829,7 @@ function renderCrunch() {
   const tab = $("crunchTab");
   tab.textContent = S.crunchSeen ? "ビッグクランチ" : "？？？";
   tab.disabled = !S.crunchSeen;
-  const ready = seedGainFor(S.runPeak) > 0;
+  const ready = crunchReady();
   if (ready && !S.crunchNotified) {
     S.crunchNotified = true;
     toast(`ビッグクランチを起こせるようになった！（宇宙の種 +${seedGainFor(S.runPeak)}）`);
@@ -831,11 +841,13 @@ function renderCrunch() {
   const lg = S.runPeak > 1 ? Math.log10(S.runPeak) : 0;
   $("crBar").style.width = Math.min(100, lg / Math.log10(CRUNCH_REQ) * 100) + "%";
   const g = seedGainFor(S.runPeak);
-  $("crProgress").textContent = g > 0
+  $("crProgress").textContent = (g > 0 ? "✓ " : "") + (g > 0
     ? `この周回の塵の最高 ${fmt(S.runPeak)}。種がもう1つ増えるまで 塵 ${fmt(Math.pow(10, 50 + 10 * (g - 2)))}`
-    : `この周回の塵の最高 ${fmt(S.runPeak)} / ${fmt(CRUNCH_REQ)}`;
+    : `この周回の塵の最高 ${fmt(S.runPeak)} / ${fmt(CRUNCH_REQ)}`);
+  $("crMassBar").style.width = Math.min(100, S.mass / CRUNCH_MASS * 100) + "%";
+  $("crMass").textContent = (crunchMassOk() ? "✓ " : "") + `持っている質量 ${fmt(S.mass)} / ${CRUNCH_MASS}（質量ショップで使うと減る）`;
   const btn = $("crBtn");
-  btn.disabled = g === 0;
+  btn.disabled = !crunchReady();
   if (!crunchArmed) btn.textContent = g > 0 ? `ビッグクランチを起こす（宇宙の種 +${fmt(g)}）` : "ビッグクランチを起こす";
 
   $("crMilestones").innerHTML = "";
