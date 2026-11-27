@@ -379,7 +379,8 @@ button.buy.mass small { color: var(--bg); opacity: 0.8; }
 .crunch-bar span { background: var(--planet); }
 button.nova.crunch { background: var(--planet); }
 button.nova.gacha { background: var(--accent); color: var(--accent-ink); }
-button.nova:disabled { opacity: 0.4; cursor: default; }
+/* 押せないときは色を抜いて、押せるときとはっきり区別する */
+button.nova:disabled { background: var(--surface); color: var(--muted); border: 1px solid var(--line); cursor: default; }
 .milestones { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; font-size: 13px; color: var(--muted); }
 .milestones li { padding-left: 18px; position: relative; }
 .milestones li::before { content: "○"; position: absolute; left: 0; }

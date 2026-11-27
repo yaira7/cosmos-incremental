@@ -796,13 +796,13 @@ function renderCrunch() {
 
   // ガチャ
   $("pullBtn").disabled = S.seeds < GACHA_COST;
-  $("pullBtn").textContent = `ガチャを引く（宇宙の種 ${GACHA_COST}）`;
+  $("pullBtn").textContent = S.seeds < GACHA_COST ? "宇宙の種がない（ビッグクランチでもらえる）" : `ガチャを引く（宇宙の種 ${GACHA_COST}）`;
   const left = PITY - S.pity;
   $("pityText").textContent = `あと ${left} 回のうちにエピックが出なければ、${left}回目はエピック確定`;
   const r = $("pullResult");
   if (S.lastPull) {
     const l = lawById(S.lastPull.id);
-    const label = S.lastPull.result === "new" ? "NEW!" : S.lastPull.result === "up" ? `Lv ${S.lastPull.lv} に上がった` : "最大レベルなので種を返した";
+    const label = S.lastPull.result === "new" ? "NEW!" : S.lastPull.result === "up" ? `Lv ${S.lastPull.lv - 1} → ${S.lastPull.lv}` : "最大レベルなので種を返した";
     r.hidden = false;
     r.className = `pull-result law rar-${l.rar}` + (performance.now() - pullAnimAt < 700 ? " pop" : "");
     r.innerHTML = "";
@@ -844,7 +844,8 @@ function lawCardBody(l, lv, label) {
   name.textContent = l.name;
   const meta = document.createElement("span");
   meta.className = "law-meta num";
-  meta.textContent = `${RARITY[l.rar].name} ・ Lv ${lv}` + (label ? ` ・ ${label}` : "");
+  // 引いた結果のカードは「Lv 1 → 2」などをレベルの代わりに出す（同じことを2回書かない）
+  meta.textContent = label && label !== "NEW!" ? `${RARITY[l.rar].name} ・ ${label}` : `${RARITY[l.rar].name} ・ Lv ${lv}` + (label ? ` ・ ${label}` : "");
   head.append(name, meta);
   const good = document.createElement("div");
   good.className = "law-good num";
