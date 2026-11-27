@@ -97,7 +97,11 @@ const lawSpin   = () => (law("spin") ? 1 + 0.2 * law("spin") : 1) * (law("cold")
 const lawSnGain = () => law("young") ? 2 + law("young") : 1;
 const snReq     = () => SN_REQ_BASE * (law("young") ? 10 : 1);
 const bhReqMult = () => law("swell") ? 2 : 1;
-const bhReq     = () => BH_REQ_BASE * bhReqMult();
+// ブラックホールに必要な星屑は、起こすたびに倍になる（100 → 200 → 400 → 800、そこから先は800のまま）。
+// ビッグクランチで回数が0に戻るので、また100から。
+// 周期の後半で星屑が一気に増えるので、要求が低いままだと「届いたらすぐ起こす」が損な選択になるため
+const BH_REQ_STEPS = 3;
+const bhReq     = () => BH_REQ_BASE * Math.pow(2, Math.min(S.blackholes || 0, BH_REQ_STEPS)) * bhReqMult();
 const lawMassBonus = () => law("swell");
 const lawStarGap = () => law("meteor") ? Math.pow(0.85, law("meteor")) : 1;
 const lawNoAuto  = () => law("silent") > 0;
