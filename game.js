@@ -172,6 +172,9 @@ function freshState() {
     crunchSeen: false,
     pity: 0,            // エピックが出ていない回数
     lastPull: null,     // 最後に引いたカード（表示用）
+    lawDraft: null,     // 次の宇宙の法則の下書き（null なら今の法則のまま）
+    choosing: false,    // ビッグクランチ後、法則を選ぶ画面を開いている（この間は時間が止まる）
+    chooseOnCrunch: true, // ビッグクランチ後に法則を選ぶ画面を出すか（設定）
     flashOn: true,      // 超新星などで画面をフラッシュさせるか
     starsCaught: 0,     // 流れ星をつかまえた回数
     costV3: true,       // 輝き・重力が値上げされてからのセーブか
@@ -320,7 +323,7 @@ function buyMax() {
 }
 
 // 超新星・ブラックホールで消えないもの
-const META_KEYS = ["starsCaught", "costV3", "flashOn", "seeds", "cards", "laws", "crunches", "crunchSeen", "pity", "lastPull", "windBoost", "notation", "speed", "last", "mass", "massTotal", "blackholes", "bhSeen", "mup", "autoNovaOn", "autoNovaAt", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2"];
+const META_KEYS = ["lawDraft", "chooseOnCrunch", "starsCaught", "costV3", "flashOn", "seeds", "cards", "laws", "crunches", "crunchSeen", "pity", "lastPull", "windBoost", "notation", "speed", "last", "mass", "massTotal", "blackholes", "bhSeen", "mup", "autoNovaOn", "autoNovaAt", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2"];
 function keepMeta() { const k = {}; META_KEYS.forEach(key => k[key] = S[key]); return k; }
 
 // silent: 留守中の計算など、何も出さない / auto: 自動超新星（フラッシュとお知らせは出さず、保存はいつものタイミングで）
@@ -373,30 +376,59 @@ function blackhole() {
 }
 
 // ビッグクランチで消えないもの（設定・記録・法則カードまわり）
-const CRUNCH_KEYS = ["starsCaught", "costV3", "flashOn", "notation", "speed", "last", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2",
+const CRUNCH_KEYS = ["chooseOnCrunch", "starsCaught", "costV3", "flashOn", "notation", "speed", "last", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2",
   "seeds", "cards", "laws", "pity", "lastPull", "autoNovaOn", "autoNovaAt", "autoOn", "windBoost"];
-function bigCrunch() {
-  const g = seedGainFor(S.runPeak);
-  if (g <= 0) return;
-  const keepAutomation = S.crunches >= 1; // 2回目のビッグクランチから自動化が残る
+// ビッグクランチと「法則を変えて作り直す」で共通の、宇宙のリセット
+const keepAutomationNow = () => S.crunches >= 1; // 1回目のビッグクランチのあとからは、自動化が消えない
+function resetUniverse(extra) {
   const k = {};
   CRUNCH_KEYS.forEach(key => k[key] = S[key]);
   const up = freshUp(), mup = freshMup();
-  if (keepAutomation) {
+  if (keepAutomationNow()) {
     up.auto = lvl("auto");
     mup.autoNova = mlvl("autoNova");
     mup.keepAuto = mlvl("keepAuto");
   }
-  Object.assign(k, {
-    seeds: S.seeds + g, crunches: S.crunches + 1, crunchSeen: true, novaSeen: true, bhSeen: true,
-    up, mup,
-  });
+  Object.assign(k, { crunches: S.crunches, crunchSeen: true, novaSeen: true, bhSeen: true, up, mup }, extra);
   S = Object.assign(freshState(), k);
+}
+function bigCrunch() {
+  const g = seedGainFor(S.runPeak);
+  if (g <= 0) return;
+  const choose = S.chooseOnCrunch !== false;
+  resetUniverse({ seeds: S.seeds + g, crunches: S.crunches + 1 });
+  if (choose) { S.choosing = true; S.lawDraft = S.laws.slice(); }
   toast(`ビッグクランチ！ 宇宙の種 +${fmt(g)}`);
   flash(true);
   save();
   buildTiers();
+  if (choose) openChooser();
 }
+// 下書きの法則で宇宙を作り直す（ビッグクランチと同じリセット、宇宙の種はもらえない）
+function rebuildUniverse() {
+  if (!draftChanged()) return;
+  const laws = currentDraft().slice();
+  resetUniverse({ laws, lawDraft: null });
+  toast("新しい法則で宇宙を作り直した");
+  flash(true);
+  save();
+  buildTiers();
+}
+// 法則を選ぶ画面で「始める」：時間を動かし始める
+function startUniverse(laws) {
+  S.laws = laws.slice(0, lawSlots());
+  S.lawDraft = null;
+  S.choosing = false;
+  S.last = Date.now();
+  closeChooser();
+  save();
+  render();
+}
+
+// ===== 法則の下書き =====
+const currentDraft = () => S.lawDraft || S.laws;
+const sameSet = (a, b) => a.length === b.length && a.every(x => b.includes(x));
+const draftChanged = () => !!S.lawDraft && !sameSet(S.lawDraft, S.laws);
 
 // ガチャ：レア度を決めてから、そのレア度のカードを1枚選ぶ
 function pullLaw() {
@@ -420,10 +452,14 @@ function pullLaw() {
   save();
   return S.lastPull;
 }
+// カードを付け外しすると、今の法則ではなく下書きが変わる（使うには作り直しが必要）
 function toggleLaw(id) {
-  const i = S.laws.indexOf(id);
-  if (i >= 0) S.laws.splice(i, 1);
-  else if (S.laws.length < lawSlots() && S.cards[id]) S.laws.push(id);
+  const d = currentDraft().slice();
+  const i = d.indexOf(id);
+  if (i >= 0) d.splice(i, 1);
+  else if (d.length < lawSlots() && S.cards[id]) d.push(id);
+  S.lawDraft = d;
+  if (!S.choosing && sameSet(d, S.laws)) S.lawDraft = null; // 今と同じに戻ったら下書きは消す
   save();
 }
 
@@ -587,6 +623,7 @@ function applySave(d) {
         S.costV3 = true;
       }
       if (!Array.isArray(d.laws)) S.laws = [];
+      if (!Array.isArray(d.lawDraft)) S.lawDraft = null;
       if (!S.mup.autoNova && d.autoNovaAt === 5) S.autoNovaAt = 3; // 初期値を5→3に変えたので、まだ使っていない人は3に
       if (d.runTime === undefined) S.runTime = 0;
       if (!Array.isArray(d.rings)) S.rings = [0, 0, 0];
@@ -807,24 +844,39 @@ function renderCrunch() {
   $("lawArea").hidden = !lawOpen;
   if (!lawOpen) return;
 
-  // ガチャ
-  $("pullBtn").disabled = S.seeds < GACHA_COST;
-  $("pullBtn").textContent = S.seeds < GACHA_COST ? "宇宙の種がない（ビッグクランチでもらえる）" : `ガチャを引く（宇宙の種 ${GACHA_COST}）`;
+  renderGacha($("pullBtn"), $("pityText"), $("pullResult"));
+  renderLawList($("lawList"), $("lawSlots"), false);
+  // 作り直しの案内
+  const changed = draftChanged();
+  $("rebuildBox").hidden = !changed;
+  if (changed) {
+    $("rebuildDiff").textContent = draftDiffText();
+    $("rebuildLoss").textContent = `作り直すと、物質・星屑・星屑ショップ・質量・質量ショップ・円盤がリセットされる（宇宙の種はもらえない）。自動化は${keepAutomationNow() ? "残る" : "消える"}。`;
+    if (!rebuildArmed) $("rebuildBtn").textContent = "この法則で宇宙を作り直す";
+  }
+}
+
+function renderGacha(btn, pityEl, resultEl) {
+  btn.disabled = S.seeds < GACHA_COST;
+  btn.textContent = S.seeds < GACHA_COST ? "宇宙の種がない（ビッグクランチでもらえる）" : `ガチャを引く（宇宙の種 ${GACHA_COST}・残り ${fmt(S.seeds)}）`;
   const left = PITY - S.pity;
-  $("pityText").textContent = `あと ${left} 回のうちにエピックが出なければ、${left}回目はエピック確定`;
-  const r = $("pullResult");
+  pityEl.textContent = `あと ${left} 回のうちにエピックが出なければ、${left}回目はエピック確定`;
   if (S.lastPull) {
     const l = lawById(S.lastPull.id);
     const label = S.lastPull.result === "new" ? "NEW!" : S.lastPull.result === "up" ? `Lv ${S.lastPull.lv - 1} → ${S.lastPull.lv}` : "最大レベルなので種を返した";
-    r.hidden = false;
-    r.className = `pull-result law rar-${l.rar}` + (performance.now() - pullAnimAt < 700 ? " pop" : "");
-    r.innerHTML = "";
-    r.appendChild(lawCardBody(l, S.cards[l.id] || 1, label));
-  } else r.hidden = true;
+    resultEl.hidden = false;
+    resultEl.className = `pull-result law rar-${l.rar}` + (performance.now() - pullAnimAt < 700 ? " pop" : "");
+    resultEl.innerHTML = "";
+    resultEl.appendChild(lawCardBody(l, S.cards[l.id] || 1, label));
+  } else resultEl.hidden = true;
+}
 
-  // 今の宇宙の法則と手持ちのカード
-  $("lawSlots").textContent = `今の宇宙の法則（${S.laws.length} / ${lawSlots()}）`;
-  const list = $("lawList");
+// 手持ちのカードを並べる。付け外しは下書きに入る。「今」の印は、今の宇宙で効いている法則
+function renderLawList(list, titleEl, inChooser) {
+  const draft = currentDraft();
+  titleEl.textContent = inChooser
+    ? `この宇宙の法則（${draft.length} / ${lawSlots()}）`
+    : `法則（${draft.length} / ${lawSlots()}）`;
   list.innerHTML = "";
   const owned = LAWS.filter(l => S.cards[l.id]);
   if (owned.length === 0) {
@@ -834,19 +886,53 @@ function renderCrunch() {
     list.appendChild(p);
   }
   owned.forEach(l => {
-    const on = S.laws.includes(l.id);
+    const on = draft.includes(l.id);
+    const active = !inChooser && S.laws.includes(l.id);
     const row = document.createElement("div");
     row.className = `law rar-${l.rar}` + (on ? " on" : "");
-    row.appendChild(lawCardBody(l, S.cards[l.id], null));
+    const body = lawCardBody(l, S.cards[l.id], null);
+    if (active) {
+      const tag = document.createElement("span");
+      tag.className = "law-now";
+      tag.textContent = "今の宇宙";
+      body.querySelector(".law-head").appendChild(tag);
+    }
+    row.appendChild(body);
     const b = document.createElement("button");
     b.className = "buy law-btn";
-    b.textContent = on ? "外す" : "組み込む";
-    b.disabled = !on && S.laws.length >= lawSlots();
-    b.addEventListener("click", () => { toggleLaw(l.id); render(); });
+    b.textContent = on ? "外す" : "選ぶ";
+    b.disabled = !on && draft.length >= lawSlots();
+    b.addEventListener("click", () => { toggleLaw(l.id); render(); if (S.choosing) renderChooser(); });
     row.appendChild(b);
     list.appendChild(row);
   });
 }
+function draftDiffText() {
+  const d = currentDraft();
+  const add = d.filter(id => !S.laws.includes(id)).map(id => `＋ ${lawById(id).name}`);
+  const del = S.laws.filter(id => !d.includes(id)).map(id => `− ${lawById(id).name}`);
+  return add.concat(del).join("　");
+}
+
+// ===== ビッグクランチ後に法則を選ぶ画面 =====
+function openChooser() {
+  $("chooser").hidden = false;
+  document.body.classList.add("choosing");
+  renderChooser();
+}
+function closeChooser() {
+  $("chooser").hidden = true;
+  document.body.classList.remove("choosing");
+}
+function renderChooser() {
+  if (!S.choosing) return;
+  $("chSeeds").textContent = `${fmt(S.seeds)} 宇宙の種`;
+  renderGacha($("chPull"), $("chPity"), $("chResult"));
+  renderLawList($("chList"), $("chSlots"), true);
+  const prev = S.laws.length ? S.laws.map(id => lawById(id).name).join("・") : "法則なし";
+  $("chSame").textContent = `前回と同じ法則で始める（${prev}）`;
+}
+
 function lawCardBody(l, lv, label) {
   const d = document.createElement("div");
   d.className = "law-body";
@@ -1087,6 +1173,22 @@ $("crBtn").addEventListener("click", () => {
   render();
 });
 $("pullBtn").addEventListener("click", () => { if (pullLaw()) { pullAnimAt = performance.now(); render(); } });
+$("chPull").addEventListener("click", () => { if (pullLaw()) { pullAnimAt = performance.now(); renderChooser(); } });
+$("chStart").addEventListener("click", () => startUniverse(currentDraft()));
+$("chSame").addEventListener("click", () => startUniverse(S.laws));
+let rebuildArmed = false;
+$("rebuildBtn").addEventListener("click", () => {
+  if (!rebuildArmed) {
+    rebuildArmed = true;
+    $("rebuildBtn").textContent = "もう一度押すと作り直す（全部リセット）";
+    setTimeout(() => { rebuildArmed = false; render(); }, 4000);
+    return;
+  }
+  rebuildArmed = false;
+  rebuildUniverse();
+  render();
+});
+$("draftReset").addEventListener("click", () => { S.lawDraft = null; save(); render(); });
 $("shootingStar").addEventListener("click", catchStar);
 $("goExport").addEventListener("click", () => {
   document.querySelector('.tab[data-tab="settings"]').click();
@@ -1114,11 +1216,13 @@ function syncSettings() {
   document.querySelectorAll("#speedSeg button").forEach(b => b.setAttribute("aria-pressed", Number(b.dataset.v) === S.speed));
   document.querySelectorAll("#hintSeg button").forEach(b => b.setAttribute("aria-pressed", (b.dataset.v === "on") === S.hintOn));
   document.querySelectorAll("#flashSeg button").forEach(b => b.setAttribute("aria-pressed", (b.dataset.v === "on") === (S.flashOn !== false)));
+  document.querySelectorAll("#chooseSeg button").forEach(b => b.setAttribute("aria-pressed", (b.dataset.v === "on") === (S.chooseOnCrunch !== false)));
 }
 document.querySelectorAll("#notationSeg button").forEach(b => b.addEventListener("click", () => { S.notation = b.dataset.v; syncSettings(); render(); }));
 document.querySelectorAll("#speedSeg button").forEach(b => b.addEventListener("click", () => { S.speed = Number(b.dataset.v); syncSettings(); }));
 document.querySelectorAll("#hintSeg button").forEach(b => b.addEventListener("click", () => { S.hintOn = b.dataset.v === "on"; syncSettings(); render(); }));
 document.querySelectorAll("#flashSeg button").forEach(b => b.addEventListener("click", () => { S.flashOn = b.dataset.v === "on"; syncSettings(); }));
+document.querySelectorAll("#chooseSeg button").forEach(b => b.addEventListener("click", () => { S.chooseOnCrunch = b.dataset.v === "on"; syncSettings(); }));
 
 $("exportBtn").addEventListener("click", () => {
   const box = $("saveText");
@@ -1514,6 +1618,7 @@ function catchStar() {
 let lastUI = 0, lastSave = 0;
 function loop(now) {
   if (!tabActive) { requestAnimationFrame(loop); return; }
+  if (S.choosing) { S.last = Date.now(); requestAnimationFrame(loop); return; } // 法則を選んでいる間は時間を止める
   const wall = Date.now();
   const gap = (wall - S.last) / 1000;
   if (gap > 5) applyOffline(gap);          // 裏に回っていた分は留守中扱い
@@ -1559,8 +1664,9 @@ document.addEventListener("pointerdown", requestPersist, { once: true });
   syncSettings();
   shownStage = currentStage();
   const gap = (Date.now() - S.last) / 1000;
-  if (gap > 5) applyOffline(gap);
+  if (gap > 5 && !S.choosing) applyOffline(gap);
   S.last = Date.now();
   render();
+  if (S.choosing) openChooser();
   requestAnimationFrame(loop);
 })();

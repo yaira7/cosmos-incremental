@@ -459,6 +459,42 @@ button.action.on { background: var(--accent); color: var(--accent-ink); border-c
   color: var(--accent-ink);
 }
 
+/* 法則の作り直し */
+.rebuild {
+  margin: 10px 0 4px;
+  padding: 12px;
+  border: 1px solid var(--planet);
+  border-radius: 10px;
+  display: grid;
+  gap: 8px;
+}
+.rebuild .sn-text { margin: 0; }
+.rebuild-diff { margin: 0; font-weight: 700; }
+.rebuild button.nova { margin-top: 0; }
+.law-now {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--planet);
+  color: #fff;
+}
+
+/* ビッグクランチ後に法則を選ぶ画面 */
+.chooser {
+  position: fixed;
+  inset: 0;
+  z-index: 15;
+  background: var(--bg);
+  overflow-y: auto;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) calc(24px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.chooser-box { max-width: 520px; margin: 0 auto; }
+.chooser-eyebrow { margin: 8px 0 0; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; color: var(--planet); }
+.chooser-title { margin: 2px 0 4px; font-size: 20px; text-wrap: balance; }
+.chooser-actions { display: grid; gap: 8px; margin-top: 16px; }
+.chooser-actions button.action { min-height: 44px; }
+
 /* 設定 */
 .setting { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); gap: 12px; }
 .setting:last-child { border-bottom: none; }
@@ -530,6 +566,24 @@ button.danger { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 3
     <p class="tab-cover-title">別のタブで開かれています</p>
     <p>セーブが上書きされないように、このタブは止めてあります。</p>
     <button class="nova" id="takeOver">このタブで遊ぶ</button>
+  </div>
+</div>
+
+<div class="chooser" id="chooser" hidden>
+  <div class="chooser-box">
+    <p class="chooser-eyebrow">ビッグクランチ</p>
+    <h2 class="chooser-title">新しい宇宙の法則を選ぶ</h2>
+    <p class="sn-text">選んでいる間は、宇宙の時間は止まっている。</p>
+    <div class="sn-big num crunch-big" id="chSeeds">0 宇宙の種</div>
+    <button class="nova gacha" id="chPull">ガチャを引く</button>
+    <div class="tier-info num" id="chPity"></div>
+    <div id="chResult" hidden></div>
+    <h3 class="shop-title" id="chSlots">この宇宙の法則</h3>
+    <div id="chList"></div>
+    <div class="chooser-actions">
+      <button class="nova crunch" id="chStart">この法則で宇宙を始める</button>
+      <button class="action" id="chSame">前回と同じ法則で始める</button>
+    </div>
   </div>
 </div>
 
@@ -629,8 +683,14 @@ button.danger { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 3
     <div class="tier-info num" id="pityText"></div>
     <div id="pullResult" hidden></div>
 
-    <h2 class="shop-title" id="lawSlots">今の宇宙の法則</h2>
-    <p class="sn-text">カードを組み込むと、すぐに今の宇宙のルールが変わる。いいことと悪いことがセットのカードもある。</p>
+    <h2 class="shop-title" id="lawSlots">法則</h2>
+    <p class="sn-text">カードを選ぶと「次の宇宙の法則」の下書きになる。使うには、その法則で宇宙を作り直す必要がある（ビッグクランチと同じように全部リセット）。いいことと悪いことがセットのカードもある。ガチャで今の法則のカードのレベルが上がったときは、すぐ反映される。</p>
+    <div class="rebuild" id="rebuildBox" hidden>
+      <p class="rebuild-diff num" id="rebuildDiff"></p>
+      <p class="sn-text" id="rebuildLoss"></p>
+      <button class="nova crunch" id="rebuildBtn">この法則で宇宙を作り直す</button>
+      <button class="action" id="draftReset">下書きを元に戻す</button>
+    </div>
     <div id="lawList"></div>
   </div>
 </section>
@@ -646,6 +706,13 @@ button.danger { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 3
   <div class="setting">
     <div><p>画面のフラッシュ</p><p class="desc">手で超新星・ブラックホール・ビッグクランチを起こしたときに画面を光らせるか。自動超新星では光らない</p></div>
     <div class="seg" id="flashSeg">
+      <button data-v="on">ON</button>
+      <button data-v="off">OFF</button>
+    </div>
+  </div>
+  <div class="setting">
+    <div><p>法則を選ぶ画面</p><p class="desc">ビッグクランチのあとに、ガチャと法則を選ぶ画面を出すか。OFFなら前回と同じ法則でそのまま始まる</p></div>
+    <div class="seg" id="chooseSeg">
       <button data-v="on">ON</button>
       <button data-v="off">OFF</button>
     </div>
