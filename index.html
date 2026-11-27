@@ -124,33 +124,65 @@ body {
   background: none;
   cursor: pointer;
 }
+/* 宇宙の星（オレンジ）にまぎれないように、超新星と同じピンクで、少し大きく、脈打つ輪を付ける */
 .shooting-star::before {
   content: "";
   position: absolute;
   left: 50%; top: 50%;
-  width: 9px; height: 9px;
-  margin: -4.5px 0 0 -4.5px;
+  width: 14px; height: 14px;
+  margin: -7px 0 0 -7px;
   border-radius: 50%;
-  background: var(--star);
-  box-shadow: 0 0 10px 3px var(--star);
+  background: var(--nova);
+  box-shadow: 0 0 12px 4px var(--nova);
 }
 .shooting-star::after {
   content: "";
   position: absolute;
   top: 50%;
   right: 50%;
-  width: 70px; height: 2px;
-  margin-top: -1px;
-  background: linear-gradient(to left, var(--star), transparent);
+  width: 90px; height: 3px;
+  margin-top: -1.5px;
+  border-radius: 2px;
+  background: linear-gradient(to left, var(--nova), transparent);
   transform-origin: right center;
   transform: rotate(14deg); /* 右下へ進むので、尾は左上に伸ばす */
 }
 .shooting-star.rtl::after {
   right: auto;
   left: 50%;
-  background: linear-gradient(to right, var(--star), transparent);
+  background: linear-gradient(to right, var(--nova), transparent);
   transform-origin: left center;
   transform: rotate(-14deg); /* 左下へ進むので、尾は右上に伸ばす */
+}
+.ss-ring {
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 34px; height: 34px;
+  margin: -17px 0 0 -17px;
+  border-radius: 50%;
+  border: 2px solid var(--nova);
+  animation: ss-pulse 1.1s ease-out infinite;
+}
+@keyframes ss-pulse {
+  0% { transform: scale(0.5); opacity: 0.9; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+.ss-label {
+  display: none;
+  position: absolute;
+  left: 50%; top: -4px;
+  transform: translate(-50%, -100%);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--nova);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.shooting-star.labeled .ss-label { display: block; }
+@media (prefers-reduced-motion: reduce) {
+  .ss-ring { animation: none; opacity: 0.7; }
 }
 .shooting-star:focus-visible { outline: 2px solid var(--accent); border-radius: 50%; }
 #universe { width: 100%; height: 100%; display: block; }
@@ -228,6 +260,18 @@ body {
 .tier-progress + .tier-info { margin-top: 4px; font-size: 12px; }
 .tier.locked { opacity: 0.5; }
 .tier.locked .tier-buttons { display: none; }
+/* 段と段の間の「▲ 惑星が岩を生んでいる 毎秒 +0.4」 */
+.flow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 0 0 2px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.flow-arrow { color: var(--accent); font-size: 10px; }
+.flow-text { flex: 1; min-width: 0; }
+.flow-rate { color: var(--accent); font-weight: 600; white-space: nowrap; }
 
 button.buy, button.action {
   font: inherit;
@@ -465,7 +509,7 @@ button.danger { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 3
 
 <div class="universe-wrap">
   <canvas id="universe" aria-label="今の宇宙の様子"></canvas>
-  <button class="shooting-star" id="shootingStar" aria-label="流れ星をつかまえる" hidden></button>
+  <button class="shooting-star" id="shootingStar" aria-label="流れ星をつかまえる" hidden><span class="ss-ring" aria-hidden="true"></span><span class="ss-label" aria-hidden="true">タップ！</span></button>
   <div class="goal" id="goal"></div>
 </div>
 

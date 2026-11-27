@@ -167,6 +167,7 @@ function freshState() {
     pity: 0,            // エピックが出ていない回数
     lastPull: null,     // 最後に引いたカード（表示用）
     flashOn: true,      // 超新星などで画面をフラッシュさせるか
+    starsCaught: 0,     // 流れ星をつかまえた回数
     costV3: true,       // 輝き・重力が値上げされてからのセーブか
     hintOn: true,       // 起こしどきのヒントを出すか（ブラックホール後のみ）
     autoNovaAt: 3,      // 自動超新星：星屑がこの数以上もらえるときに起こす
@@ -312,7 +313,7 @@ function buyMax() {
 }
 
 // 超新星・ブラックホールで消えないもの
-const META_KEYS = ["costV3", "flashOn", "seeds", "cards", "laws", "crunches", "crunchSeen", "pity", "lastPull", "windBoost", "notation", "speed", "last", "mass", "massTotal", "blackholes", "bhSeen", "mup", "autoNovaOn", "autoNovaAt", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2"];
+const META_KEYS = ["starsCaught", "costV3", "flashOn", "seeds", "cards", "laws", "crunches", "crunchSeen", "pity", "lastPull", "windBoost", "notation", "speed", "last", "mass", "massTotal", "blackholes", "bhSeen", "mup", "autoNovaOn", "autoNovaAt", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2"];
 function keepMeta() { const k = {}; META_KEYS.forEach(key => k[key] = S[key]); return k; }
 
 // silent: 留守中の計算など、何も出さない / auto: 自動超新星（フラッシュとお知らせは出さず、保存はいつものタイミングで）
@@ -362,7 +363,7 @@ function blackhole() {
 }
 
 // ビッグクランチで消えないもの（設定・記録・法則カードまわり）
-const CRUNCH_KEYS = ["costV3", "flashOn", "notation", "speed", "last", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2",
+const CRUNCH_KEYS = ["starsCaught", "costV3", "flashOn", "notation", "speed", "last", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2",
   "seeds", "cards", "laws", "pity", "lastPull", "autoNovaOn", "autoNovaAt", "autoOn", "windBoost"];
 function bigCrunch() {
   const g = seedGainFor(S.runPeak);
@@ -650,6 +651,11 @@ function buildTiers() {
   wrap.innerHTML = "";
   tierEls.length = 0;
   TIERS.forEach((t, i) => {
+    // 段と段の間に「この段が上の段を生んでいる」ことを示す行を入れる（岩の上の行は、画面上部の塵を指す）
+    const flow = document.createElement("div");
+    flow.className = "flow";
+    flow.innerHTML = `<span class="flow-arrow" aria-hidden="true">▲</span><span class="flow-text"></span><span class="flow-rate num"></span>`;
+    wrap.appendChild(flow);
     const row = document.createElement("div");
     row.className = "tier";
     row.innerHTML = `
@@ -670,6 +676,9 @@ function buildTiers() {
     wrap.appendChild(row);
     tierEls.push({
       row,
+      flow,
+      flowText: flow.querySelector(".flow-text"),
+      flowRate: flow.querySelector(".flow-rate"),
       name: row.querySelector(".tname"),
       mult: row.querySelector(".mult"),
       info: row.querySelector(".info"),
@@ -939,6 +948,7 @@ function render() {
     const el = tierEls[i];
     const open = unlocked(i);
     el.row.classList.toggle("locked", !open);
+    el.flow.hidden = !open;
     if (!open) {
       el.name.textContent = "？？？";
       el.mult.textContent = "";
@@ -951,7 +961,14 @@ function render() {
     const perSec = rateOf(i);
     el.name.textContent = t.name;
     el.mult.textContent = `×${fmt(mult(i), true)}`;
-    el.info.textContent = `${fmt(Math.floor(S.amt[i]))} 個 ・ 毎秒 ${fmt(perSec, true)} ${t.makes}`; // 内部は小数、表示は切り捨て
+    el.info.textContent = `${fmt(Math.floor(S.amt[i]))} 個 持っている`; // 内部は小数、表示は切り捨て
+    if (S.amt[i] >= 1) {
+      el.flowText.textContent = `${t.name}が${t.makes}を生んでいる`;
+      el.flowRate.textContent = `毎秒 +${fmt(perSec, true)}`;
+    } else {
+      el.flowText.textContent = `${t.name}を買うと、${t.makes}が自動で増えていく`;
+      el.flowRate.textContent = "";
+    }
     const m = msInfo(b);
     el.bar.style.width = ((b - m.prev) / (m.next - m.prev) * 100) + "%";
     const parts = [`節目 ×${fmt(msMult(i), true)}`];
@@ -1430,7 +1447,8 @@ function glow(x, y, core, halo, t) {
 // ===== 流れ星 =====
 // 遊んでいる間だけ、ときどき宇宙を横切る。タップすると、ランダムでいいことがある
 const STAR_MIN_GAP = 60, STAR_MAX_GAP = 150; // 次の流れ星までの秒数（実時間）
-const STAR_DURATION = 7;                     // 画面を横切る秒数
+const STAR_DURATION = 9;                     // 画面を横切る秒数
+const STAR_LABEL_UNTIL = 3;                  // この回数つかまえるまでは「タップ！」の文字を出す
 let starNextAt = performance.now() + (20 + Math.random() * 40) * 1000; // 最初の1つは早めに
 let star = null;
 function scheduleStar(now) {
@@ -1443,7 +1461,10 @@ function updateStar(now) {
     const ltr = Math.random() < 0.5;
     star = { start: now, ltr, y0: 0.1 + Math.random() * 0.3, y1: 0.45 + Math.random() * 0.35 };
     el.classList.toggle("rtl", !ltr);
+    el.classList.toggle("labeled", (S.starsCaught || 0) < STAR_LABEL_UNTIL);
     el.hidden = false;
+    // まだ一度もつかまえたことがなければ、何ができるかを知らせる
+    if (!S.starsCaught) toast("流れ星が来た！ タップするといいことがある");
   }
   const p = (now - star.start) / (STAR_DURATION * 1000);
   if (p >= 1) { star = null; el.hidden = true; scheduleStar(now); return; }
@@ -1459,6 +1480,7 @@ function catchStar() {
   star = null;
   el.hidden = true;
   scheduleStar(performance.now());
+  S.starsCaught = (S.starsCaught || 0) + 1;
   const rewards = [
     () => { S.windBoost = WIND_TIME; return `追い風！ ${WIND_TIME}秒間、塵の生産 ×${WIND_MULT}`; },
     () => { const g = dustPerSec() * 60; S.dust += g; return `塵の雨！ 塵 +${fmt(g)}（60秒分）`; },
