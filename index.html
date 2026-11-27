@@ -418,6 +418,10 @@ button.law-btn { min-width: 84px; text-align: center; }
 }
 @media (prefers-reduced-motion: reduce) { .pull-result.pop { animation: none; } }
 
+/* スマホ（縦1列）では、2列用の入れ物は無いものとして扱う。
+   入れ物があると、上の塵の表示（position: sticky）が入れ物の中でしか固定されず、スクロールで隠れてしまうため */
+.layout, .col-left, .col-right { display: contents; }
+
 /* PCなど横に広い画面：左に宇宙（固定）、右にタブと操作の2列にする */
 @media (min-width: 900px) {
   /* 下の余白をbodyではなく右の列に持たせる（左の列が一番下までスクロールしたときに押し上げられないように） */
@@ -438,7 +442,7 @@ button.law-btn { min-width: 84px; text-align: center; }
   }
   .col-left .top { position: static; }
   .col-left .universe-wrap { flex: 1; height: auto; min-height: 320px; }
-  .col-right { padding: 12px 0 calc(24px + env(safe-area-inset-bottom, 0px)); min-width: 0; }
+  .col-right { display: block; padding: 12px 0 calc(24px + env(safe-area-inset-bottom, 0px)); min-width: 0; }
   .col-right .tabs { position: sticky; top: env(safe-area-inset-top, 0px); background: var(--bg); z-index: 4; margin-top: 0; }
 }
 
