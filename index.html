@@ -418,6 +418,43 @@ button.law-btn { min-width: 84px; text-align: center; }
 }
 @media (prefers-reduced-motion: reduce) { .pull-result.pop { animation: none; } }
 
+/* PCなど横に広い画面：左に宇宙（固定）、右にタブと操作の2列にする */
+@media (min-width: 900px) {
+  /* 下の余白をbodyではなく右の列に持たせる（左の列が一番下までスクロールしたときに押し上げられないように） */
+  body { max-width: 1240px; padding-bottom: 0; }
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(380px, 1fr) minmax(460px, 1fr);
+    gap: 0 28px;
+    padding: 0 max(16px, env(safe-area-inset-left, 0px)) 0 max(16px, env(safe-area-inset-right, 0px));
+    align-items: start;
+  }
+  .col-left {
+    position: sticky;
+    top: env(safe-area-inset-top, 0px);
+    height: calc(100vh - env(safe-area-inset-top, 0px));
+    display: flex;
+    flex-direction: column;
+  }
+  .col-left .top { position: static; }
+  .col-left .universe-wrap { flex: 1; height: auto; min-height: 320px; }
+  .col-right { padding: 12px 0 calc(24px + env(safe-area-inset-bottom, 0px)); min-width: 0; }
+  .col-right .tabs { position: sticky; top: env(safe-area-inset-top, 0px); background: var(--bg); z-index: 4; margin-top: 0; }
+}
+
+/* 自動購入：オンのときは色付きにする */
+button.action.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.auto-chip {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: 2px;
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
 /* 設定 */
 .setting { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); gap: 12px; }
 .setting:last-child { border-bottom: none; }
@@ -484,6 +521,16 @@ button.danger { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 3
 </style>
 </head>
 <body>
+<div class="tab-cover" id="tabCover" hidden>
+  <div class="tab-cover-box">
+    <p class="tab-cover-title">別のタブで開かれています</p>
+    <p>セーブが上書きされないように、このタブは止めてあります。</p>
+    <button class="nova" id="takeOver">このタブで遊ぶ</button>
+  </div>
+</div>
+
+<div class="layout">
+<div class="col-left">
 <header class="top">
   <div>
     <span class="dust-amount num" id="dust">10</span><span class="dust-unit">塵</span>
@@ -500,13 +547,6 @@ button.danger { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 3
   <button class="action" id="goExport">書き出しへ</button>
 </div>
 
-<div class="tab-cover" id="tabCover" hidden>
-  <div class="tab-cover-box">
-    <p class="tab-cover-title">別のタブで開かれています</p>
-    <p>セーブが上書きされないように、このタブは止めてあります。</p>
-    <button class="nova" id="takeOver">このタブで遊ぶ</button>
-  </div>
-</div>
 
 <div class="universe-wrap">
   <canvas id="universe" aria-label="今の宇宙の様子"></canvas>
@@ -514,6 +554,8 @@ button.danger { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 3
   <div class="goal" id="goal"></div>
 </div>
 
+</div><!-- /col-left -->
+<div class="col-right">
 <nav class="tabs" role="tablist">
   <button class="tab" role="tab" aria-selected="true" data-tab="matter">物質</button>
   <button class="tab" role="tab" aria-selected="false" data-tab="nova" id="novaTab">？？？</button>
@@ -632,6 +674,9 @@ button.danger { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 3
     <button class="danger" id="wipe">消去</button>
   </div>
 </section>
+
+</div><!-- /col-right -->
+</div><!-- /layout -->
 
 <div id="flash"></div>
 <div class="toast" id="toast"></div>

@@ -438,6 +438,8 @@ function buyUpgrade(u) {
   save();
 }
 
+// この段が今、自動購入されているか（表示用）
+const autoActive = i => i < lvl("auto") && S.autoOn && !lawNoAuto();
 // 自動購入：解放された段を、上の段から順に買う。ただし1回の買い物は今の塵のAUTO_BUDGET以下だけ
 let autoTimer = 0;
 function autoBuy(dt) {
@@ -660,7 +662,7 @@ function buildTiers() {
     row.className = "tier";
     row.innerHTML = `
       <div>
-        <div class="tier-name"><span class="tname"></span><span class="mult num"></span></div>
+        <div class="tier-name"><span class="tname"></span><span class="mult num"></span><span class="auto-chip" hidden>自動</span></div>
         <div class="tier-info num info"></div>
         <div class="tier-progress"><span></span></div>
         <div class="tier-info num ms"></div>
@@ -679,6 +681,7 @@ function buildTiers() {
       flow,
       flowText: flow.querySelector(".flow-text"),
       flowRate: flow.querySelector(".flow-rate"),
+      auto: row.querySelector(".auto-chip"),
       name: row.querySelector(".tname"),
       mult: row.querySelector(".mult"),
       info: row.querySelector(".info"),
@@ -950,6 +953,7 @@ function render() {
     const open = unlocked(i);
     el.row.classList.toggle("locked", !open);
     el.flow.hidden = !open;
+    el.auto.hidden = !(open && autoActive(i));
     if (!open) {
       el.name.textContent = "？？？";
       el.mult.textContent = "";
@@ -1040,7 +1044,8 @@ function render() {
   $("anToggle").setAttribute("aria-pressed", S.autoNovaOn);
   const ab = $("autoBtn");
   ab.hidden = lvl("auto") === 0;
-  ab.textContent = S.autoOn ? "自動購入 ON" : "自動購入 OFF";
+  ab.textContent = lawNoAuto() ? "自動購入（静かな宇宙で停止中）" : S.autoOn ? "自動購入 ON" : "自動購入 OFF";
+  ab.classList.toggle("on", S.autoOn && !lawNoAuto());
   ab.setAttribute("aria-pressed", S.autoOn);
 }
 
