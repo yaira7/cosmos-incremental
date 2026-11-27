@@ -14,7 +14,8 @@ const SN_REQ_BASE = 500;      // 超新星に必要な恒星の量（法則カ�
 
 const memMultAt = lv => 1 + 0.5 * lv;            // 恒星の記憶：×1 → ×1.5 → ×2 → ×2.5
 const COMPRESS_RATE = 0.8;                       // 圧縮1レベルごとに、値上がり幅がこの割合になる（−20%ずつ）
-const AFTERGLOW_TIME = 60;                       // 残光が続く秒数
+const AFTERGLOW_TIME = 60;                       // 残光が続く最大の秒数
+const AFTERGLOW_RATIO = 1 / 3;                   // 残光は「前の周回の長さ」のこの割合だけ続く（周回の頭だけに効くように）
 const afterglowPeakAt = lv => 1 + 4 * lv;         // 超新星直後の倍率（Lv1で×5、Lv2で×9…）
 // 自動購入は「今の塵のこの割合以下」の買い物しかしない（上の段を買う分を残すため）
 const AUTO_BUDGET = 0.1;
@@ -115,7 +116,7 @@ const UPGRADES = [
     cost: lv => Math.ceil(Math.pow(1.7, lv)),     effect: lv => `塵の生産 ×${1 + lv}` },
   { id: "gravity",  name: "重力",       desc: "節目の倍率が強くなる",
     cost: lv => Math.ceil(2 * Math.pow(1.7, lv)), effect: lv => `節目1つごと ×${milestoneMultAt(lv).toFixed(2)}` },
-  { id: "afterglow", name: "残光",      desc: `超新星の直後、塵の生産が一時的に跳ね上がる（${AFTERGLOW_TIME}秒かけて元に戻る）`, max: 5,
+  { id: "afterglow", name: "残光",      desc: `超新星の直後、塵の生産が一時的に跳ね上がる。前の周回の長さの1/3だけ続く（最大${AFTERGLOW_TIME}秒）`, max: 5,
     cost: lv => 1 + lv,               effect: lv => lv === 0 ? "なし" : `直後の塵の生産 ×${afterglowPeakAt(lv)}` },
   { id: "compress", name: "圧縮",       desc: "1個ごとの値上がりがゆるやかになる", max: 5,
     cost: lv => 5 * Math.pow(2, lv),  effect: lv => `値上がり幅 −${Math.round((1 - Math.pow(COMPRESS_RATE, lv)) * 100)}%` },
@@ -144,6 +145,7 @@ function freshState() {
     up: freshUp(),
     autoOn: true,
     afterglow: 0,       // 残光の残り秒数
+    afterglowMax: 0,    // 今回の残光の長さ（前の周回の長さの1/3、最大60秒）
     memV2: true,        // 恒星の記憶が掛け算版になってからのセーブか
     compV2: true,       // 圧縮が値上げされてからのセーブか
     novaSeen: false,
@@ -192,10 +194,11 @@ function msInfo(b) {
 const milestoneMult = () => milestoneMultAt(lvl("gravity")) * lawMs();
 const msMult = i => Math.pow(milestoneMult(), msInfo(S.bought[i]).n); // 節目による倍率
 const glowMult = i => i === 0 ? 1 + lvl("glow") : 1;                  // 岩の輝き（岩だけ）
-// 残光：超新星直後に最大、AFTERGLOW_TIME秒かけて×1まで直線的に下がる（岩だけ）
+// 残光：超新星直後に最大、afterglowMax秒かけて×1まで直線的に下がる（岩だけ）
 const afterglowMult = i => {
   if (i !== 0 || !S.afterglow || lvl("afterglow") === 0 || law("cold")) return 1;
-  return 1 + (afterglowPeakAt(lvl("afterglow")) - 1) * (S.afterglow / AFTERGLOW_TIME);
+  const len = S.afterglowMax || AFTERGLOW_TIME;
+  return 1 + (afterglowPeakAt(lvl("afterglow")) - 1) * Math.min(1, S.afterglow / len);
 };
 const diskMult = i => i === 0 ? ringMult(0) : ringMult(1);           // 降着円盤（内側は塵、中間は上の段）
 // 流れ星の「追い風」：決まった秒数だけ塵の生産が上がる
@@ -320,13 +323,16 @@ function keepMeta() { const k = {}; META_KEYS.forEach(key => k[key] = S[key]); r
 function supernova(silent, auto) {
   if (snGain() <= 0) return;
   const g = rollGain();
+  // 残光の長さは、終わった周回の長さで決まる（周回が短いほど、残光も短い）
+  const glowLen = Math.min(AFTERGLOW_TIME, S.runTime * AFTERGLOW_RATIO);
   if (!silent && !auto) toast(`超新星！ 星屑 +${fmt(g)}`);
   const keep = Object.assign(keepMeta(), {
     stardust: S.stardust + g, stardustTotal: S.stardustTotal + g, supernovas: S.supernovas + 1,
     cycleStardust: S.cycleStardust + g, bhNotified: S.bhNotified, rings: S.rings, up: S.up, autoOn: S.autoOn, novaSeen: true,
   });
   S = Object.assign(freshState(), keep);
-  S.afterglow = AFTERGLOW_TIME;
+  S.afterglow = glowLen;
+  S.afterglowMax = glowLen;
   if (!silent && !auto) { flash(); save(); }
 }
 
