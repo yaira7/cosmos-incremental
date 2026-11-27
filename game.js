@@ -80,7 +80,7 @@ const LAWS = [
   { id: "cheap",  rar: "c", name: "安い星",     good: lv => `値上がり幅 −${5 * lv}%` },
   { id: "heavy",  rar: "r", name: "重い宇宙",   good: lv => `節目の倍率 ×${(1.2 + 0.1 * lv).toFixed(1)}`, bad: "値上がり幅 +30%" },
   { id: "light",  rar: "r", name: "速い光",     good: lv => `惑星・恒星・銀河の生産 ×${2 + lv}`, bad: "岩の生産 ×0.5" },
-  { id: "cold",   rar: "r", name: "冷えた宇宙", good: lv => `円盤の回転 ×${(2 + 0.5 * lv).toFixed(1)}`, bad: "残光が効かない" },
+  { id: "cold",   rar: "r", name: "冷えた宇宙", good: lv => `円盤の回転 ×${(2 + 0.5 * lv).toFixed(1)}`, bad: "星屑ショップで残光が買えない" },
   { id: "young",  rar: "e", name: "若い宇宙",   good: lv => `超新星の星屑 ×${2 + lv}`, bad: "超新星に必要な恒星 ×10" },
   { id: "swell",  rar: "e", name: "膨らむ宇宙", good: lv => `ブラックホールの質量 +${lv}`, bad: "ブラックホールに必要な星屑 ×2" },
   { id: "silent", rar: "e", name: "静かな宇宙", good: lv => `塵の生産 ×${5 + 2 * lv}`, bad: "自動購入が効かない" },
@@ -474,7 +474,10 @@ function buyMassUpgrade(u) {
   save();
 }
 
+// 法則のせいで買えない強化（冷えた宇宙では残光が買えない）
+const upgradeBlocked = u => u.id === "afterglow" && law("cold") > 0;
 function buyUpgrade(u) {
+  if (upgradeBlocked(u)) return;
   const lv = lvl(u.id);
   if (u.max !== undefined && lv >= u.max) return;
   const c = u.cost(lv);
@@ -770,10 +773,13 @@ function renderShop() {
     const maxed = u.max !== undefined && lv >= u.max;
     el.row.classList.toggle("maxed", maxed);
     el.lv.textContent = u.max !== undefined ? `Lv ${lv} / ${u.max}` : `Lv ${lv}`;
-    el.effect.innerHTML = maxed ? `<b>${u.effect(lv)}</b>（最大）` : `${u.effect(lv)} → <b>${u.effect(lv + 1)}</b>`;
+    const blocked = upgradeBlocked(u);
+    el.row.classList.toggle("blocked", blocked);
+    if (blocked) el.effect.textContent = "冷えた宇宙の法則で買えない";
+    else el.effect.innerHTML = maxed ? `<b>${u.effect(lv)}</b>（最大）` : `${u.effect(lv)} → <b>${u.effect(lv + 1)}</b>`;
     const c = u.cost(lv);
     el.cost.textContent = `${fmt(c)} 星屑`;
-    el.btn.disabled = maxed || S.stardust < c;
+    el.btn.disabled = blocked || maxed || S.stardust < c;
   });
 }
 
