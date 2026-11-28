@@ -237,6 +237,11 @@ body {
   vertical-align: 2px;
 }
 .panel { padding: 12px 16px; }
+/* 一度も超新星を起こしていない人向けの説明 */
+.first-nova { border: 1px solid var(--accent); border-radius: 10px; padding: 10px 12px; margin: 0 0 14px; }
+.first-nova-title { margin: 0 0 6px; font-weight: 700; font-size: 14px; color: var(--accent); }
+.first-nova-list { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; font-size: 14px; }
+.first-nova-list b { color: var(--ink); }
 .panel[hidden] { display: none; }
 
 /* 生成器の行 */
@@ -699,6 +704,10 @@ button.danger { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 3
 <section class="panel" id="panel-nova" hidden>
   <div class="sn-big num" id="snStardust">0 星屑</div>
   <p class="sn-text">恒星を集めた状態で超新星を起こすと、物質がすべてリセットされる代わりに星屑が手に入る。星屑は下のショップで強化に使える。ショップの強化は超新星でリセットされない。</p>
+  <div class="first-nova" id="firstNova" hidden>
+    <p class="first-nova-title">超新星を起こすといいこと</p>
+    <ul class="first-nova-list" id="firstNovaList"></ul>
+  </div>
   <div class="sn-bar"><span id="snBar"></span></div>
   <div class="tier-info num" id="snProgress"></div>
   <button class="nova" id="novaBtn" disabled>超新星を起こす</button>

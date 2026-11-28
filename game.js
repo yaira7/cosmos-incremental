@@ -1,7 +1,10 @@
 // ===== バージョンと更新履歴 =====
 // 更新したら GAME_VERSION を1つ増やし、version.json の数字も同じにして、CHANGELOG の先頭に追記する
-const GAME_VERSION = 2;
+const GAME_VERSION = 3;
 const CHANGELOG = [
+  { v: 3, date: "11/28", items: [
+    "はじめての超新星の前に、起こすと何がいいのか（もらえる星屑・買える強化・粘りすぎると損なこと）を超新星タブに出すようにした。1回起こすと消える",
+  ] },
   { v: 2, date: "11/28", items: [
     "セーブの書き出しの文字列を、大文字・小文字が変わっても読み込める形にした（「COSMOS2:」から始まる）。前の「COSMOS1:」の文字列もそのまま読み込める",
   ] },
@@ -360,7 +363,9 @@ function supernova(silent, auto) {
   const g = rollGain();
   // 残光の長さは、終わった周回の長さで決まる（周回が短いほど、残光も短い）
   const glowLen = Math.min(AFTERGLOW_TIME, S.runTime * AFTERGLOW_RATIO);
-  if (!silent && !auto) toast(`超新星！ 星屑 +${fmt(g)}`);
+  if (!silent && !auto) toast(S.supernovas === 0
+    ? `はじめての超新星！ 星屑 +${fmt(g)}。下の星屑ショップで強化を買おう`
+    : `超新星！ 星屑 +${fmt(g)}`);
   const keep = Object.assign(keepMeta(), {
     stardust: S.stardust + g, stardustTotal: S.stardustTotal + g, supernovas: S.supernovas + 1,
     cycleStardust: S.cycleStardust + g, bhNotified: S.bhNotified, rings: S.rings, up: S.up, autoOn: S.autoOn, novaSeen: true,
@@ -1158,6 +1163,26 @@ function renderBH() {
   });
 }
 
+// 一度も超新星を起こしていない人向けの説明（超新星タブの上）
+let firstNovaToasted = false;
+function renderFirstNova() {
+  const box = $("firstNova");
+  box.hidden = S.supernovas > 0;
+  if (box.hidden || $("panel-nova").hidden) return;
+  const g = snGain();
+  const items = [];
+  items.push("<b>星屑とショップの強化は消えない。</b>次の周回は強化が付いた状態で始まるから、今の周回より速く進む");
+  if (g > 0) {
+    const can = UPGRADES.filter(u => !upgradeBlocked(u) && u.cost(lvl(u.id)) <= S.stardust + g)
+      .map(u => `${u.name}（${fmt(u.cost(lvl(u.id)))}星屑：${u.effect(lvl(u.id) + 1)}）`);
+    items.push(`今起こすと<b>星屑 +${snGainText()}</b>。それで買えるもの：${can.length ? can.join("、") : "まだない"}`);
+  } else {
+    items.push(`恒星を ${fmt(snReq())} 集めると起こせる`);
+  }
+  items.push("星屑は恒星が10倍になるごとに1つずつしか増えない。<b>長く粘るより、早めに起こして強化を重ねたほうが速い</b>");
+  $("firstNovaList").innerHTML = items.map(t => `<li>${t}</li>`).join("");
+}
+
 function goalText() {
   if (S.bought[0] === 0) return `まずは<strong>岩</strong>を1つ買おう（${fmt(price(0))} 塵）`;
   for (let i = 1; i < TIERS.length; i++) {
@@ -1169,6 +1194,8 @@ function goalText() {
   }
   const g = snGain();
   if (g === 0) return `超新星まで 恒星あと <strong>${fmt(snReq() - S.amt[2])}</strong>`;
+  // 一度も超新星を起こしていない人には、起こすと何がいいのかを伝える
+  if (S.supernovas === 0) return `<strong>超新星</strong>で星屑 +${snGainText()} → 強化を買うと次の周回が速くなる`;
   if (hintActive() && pastPeak()) return `粘るより<strong>超新星を起こした方が速そう</strong>（星屑 +${snGainText()}）`;
   return `超新星を起こすと 星屑 <strong>+${snGainText()}</strong>`;
 }
@@ -1237,6 +1264,14 @@ function render() {
   const novaTab = $("novaTab");
   novaTab.textContent = S.novaSeen ? "超新星" : "？？？";
   novaTab.disabled = !S.novaSeen;
+  // 最初の1回だけ：起こせるようになったら知らせて、タブに印を付ける
+  const firstReady = S.supernovas === 0 && snGain() > 0;
+  novaTab.classList.toggle("ready", firstReady);
+  if (firstReady && !firstNovaToasted) {
+    firstNovaToasted = true;
+    toast("超新星を起こせるようになった！ 超新星タブで、もらえる星屑と買える強化を見てみよう");
+  }
+  renderFirstNova();
 
   $("snStardust").textContent = `${fmt(S.stardust)} 星屑`;
   // ゲージ：次に獲得量が+1されるまでの進み具合。恒星10倍ごとなので対数で測る（最初の1つ目までは普通に割合）
