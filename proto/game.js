@@ -3,7 +3,7 @@
 const GAME_VERSION = 5;
 const CHANGELOG = [
   { v: 5, date: "試作", items: [
-    "【試作版】部品にそれぞれ損を付けた。加速の軸は1周の効果も半分、共鳴の石は付けた円盤が止まる（そのかわり直列の判定から外れる）",
+    "【試作版】部品にそれぞれ損を付けた。加速の軸は1周の効果も半分、共鳴の石は付けた円盤が止まる（直列のとき、その円盤の力だけ ×5）",
     "【試作版】部品は加速の軸・重り・共鳴の石の3つから。外側の円盤などを手に入れると順番に出てくる。質量でLv3まで強化できる（強くなるだけで、周期は変わらない）",
     "【試作版】ブラックホールを5回起こすと、上級の部品「はみ出し歯車」が出てくる。付ける場所によって直列が崩れる",
     "【試作版】降着円盤の周期を「刻」で数えるようにした。内側2刻・中間6刻・外側24刻で1周",
@@ -85,7 +85,7 @@ const PARTS = [
   { id: "p_weight", name: "重り",         costs: [4, 6, 8], needs: "ring1",
     eff: lv => `1周が2倍になるけど、1周ごとの効果が${2 + lv}倍` },
   { id: "p_reso",   name: "共鳴の石",     costs: [5, 7, 9], needs: "ring2",
-    eff: lv => `付けた円盤は止まる（周回数が増えない）。そのかわり直列の判定から外れて、直列の倍率が ×3 → ×${3 + 2 * lv}` },
+    eff: lv => `付けた円盤は止まる（周回数が増えない）。直列のとき、この円盤の力が ×${3 + 2 * lv}（ほかの円盤は ×3）。止まった円盤は直列の判定から外れる` },
   { id: "p_odd",    name: "はみ出し歯車", costs: [5, 7, 9], unlock: () => S.blackholes >= ODD_UNLOCK_BH, advanced: true,
     eff: lv => `1周が1刻長くなるけど、周回数が${1 + lv}倍たまる。付ける場所によっては直列が崩れる` },
 ];
@@ -126,10 +126,13 @@ const lapValueWith = part => {
   return 1;
 };
 const resoOn = () => S.equip.some((p, i) => p === "p_reso" && ringActive(i));
-const alignMult = () => resoOn() ? 3 + 2 * Math.max(1, mlvl("p_reso")) : 3;
+// 直列のときの倍率：共鳴の石を付けた円盤だけ大きい
+const RESO_MULT = () => 3 + 2 * Math.max(1, mlvl("p_reso"));
+const alignMultWith = (i, eq) => eq[i] === "p_reso" ? RESO_MULT() : 3;
+const alignMult = () => 3;
 const alignLen = () => ALIGN_KOKU;
 const aligned = () => S.alignLeft > 0;
-const ringMult = i => ringActive(i) ? 1 + RINGS[i].per * ringLaps(i) * (aligned() ? alignMult() : 1) : 1;
+const ringMult = i => ringActive(i) ? 1 + RINGS[i].per * ringLaps(i) * (aligned() ? alignMultWith(i, S.equip) : 1) : 1;
 const gcd = (a, b) => b ? gcd(b, a % b) : a;
 const lcm = (a, b) => a / gcd(a, b) * b;
 // 直列の間隔（刻）。円盤が2つ以上回っていないと直列は起きない
@@ -1152,7 +1155,7 @@ function buildBH() {
 function showAlignBanner() {
   if (S.flashOn === false) return; // 演出オフの設定に従う
   const b = $("alignBanner");
-  $("alignBannerSub").textContent = `円盤の力 ×${alignMult()}`;
+  $("alignBannerSub").textContent = resoOn() ? `円盤の力 ×3・共鳴 ×${RESO_MULT()}` : `円盤の力 ×3`;
   b.classList.remove("show"); void b.offsetWidth; b.classList.add("show");
 }
 function renderAlignChip() {
@@ -1168,7 +1171,7 @@ function renderAlign() {
   const bar = $("alignBar"), txt = $("alignText");
   box.classList.toggle("on", aligned());
   if (aligned()) {
-    txt.innerHTML = `<b>直列中！</b> 円盤の上乗せ分が ×${alignMult()}`;
+    txt.innerHTML = `<b>直列中！</b> 円盤の上乗せ分が ×3${resoOn() ? `（共鳴の石の円盤は ×${RESO_MULT()}）` : ""}`;
     bar.style.width = Math.min(100, S.alignLeft / alignLen() * 100) + "%";
   } else if (!a) {
     txt.textContent = "円盤が2つ以上回ると、全部が同時に1周し終わったときに「直列」が起きる";
@@ -1230,9 +1233,12 @@ function renderPartEditor(force) {
     const lapGain = +(RINGS[i].per * lapValueWith(id)).toFixed(2);
     // 選んでいる部品の説明と、この円盤でどうなるか
     const what = id ? `<b>${partName(id)}</b>：${partById(id).eff(Math.max(1, mlvl(id)))}` : "<b>部品なし</b>";
-    const res = stoppedWith(i, draftEquip)
-      ? `→ この円盤は <b>止まる</b>。今の ${RINGS[i].target} ×${(1 + RINGS[i].per * ringLaps(i)).toFixed(2)} のまま、直列のときだけ強くなる`
-      : `→ この円盤は <b>${p}刻で1周</b>${p !== base ? `（部品なしだと${base}刻）` : ""}、1周ごとに${RINGS[i].target} <b>+${lapGain}</b>`;
+    const up = RINGS[i].per * ringLaps(i);
+    const am = alignMultWith(i, draftEquip);
+    const res = (stoppedWith(i, draftEquip)
+      ? `→ この円盤は <b>止まる</b>（${RINGS[i].target} ×${(1 + up).toFixed(2)} のまま）`
+      : `→ この円盤は <b>${p}刻で1周</b>${p !== base ? `（部品なしだと${base}刻）` : ""}、1周ごとに${RINGS[i].target} <b>+${lapGain}</b>`)
+      + `<br>→ 今の周回数だと、直列のとき <b>×${(1 + up).toFixed(2)} → ×${(1 + up * am).toFixed(2)}</b>${am > 3 ? "（共鳴）" : ""}`;
     return `<div class="pe-row"><div class="pe-name">${RINGS[i].name}<span class="pe-per num">${p}刻で1周</span></div><div class="chips">${opts}</div>`
       + `<p class="pe-what">${what}<br>${res}</p></div>`;
   }).join("");
@@ -1240,8 +1246,9 @@ function renderPartEditor(force) {
   const nowL = alignEvery(alignRings().map(ringPeriodK));
   const newL = alignEvery(alignRingsWith(draftEquip).map(i => periodWith(i, draftEquip[i])));
   const cmp = !newL ? "回っている円盤が2つ以上ないと直列は起きない"
-    : nowL === newL ? `直列は <b>${newL}刻ごと</b>（今と同じ）`
-    : `直列は ${nowL}刻ごと → <b>${newL}刻ごと</b>${newL < nowL ? "（増える）" : "（減る）"}`;
+    : (nowL === newL ? `直列は <b>${newL}刻ごと</b>（今と同じ）`
+    : `直列は ${nowL}刻ごと → <b>${newL}刻ごと</b>${newL < nowL ? "（増える）" : "（減る）"}`)
+      + `<br><span class="pe-sub">直列している時間：だいたい ${Math.round(Math.min(ALIGN_KOKU, newL / 2) / newL * 100)}%</span>`;
   // 刻の表（各円盤が1周し終わる刻に印、全部そろう刻はピンク）
   const cols = Math.max(12, Math.min(48, newL || 24));
   let grid = `<div class="pe-grid" style="grid-template-columns: 64px repeat(${cols}, minmax(0, 1fr))">`;
