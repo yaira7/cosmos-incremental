@@ -1,7 +1,10 @@
 // ===== バージョンと更新履歴 =====
 // 更新したら GAME_VERSION を1つ増やし、version.json の数字も同じにして、CHANGELOG の先頭に追記する
-const GAME_VERSION = 1;
+const GAME_VERSION = 2;
 const CHANGELOG = [
+  { v: 2, date: "11/28", items: [
+    "セーブの書き出しの文字列を、大文字・小文字が変わっても読み込める形にした（「COSMOS2:」から始まる）。前の「COSMOS1:」の文字列もそのまま読み込める",
+  ] },
   { v: 1, date: "11/28", items: [
     "アップデートのお知らせを出すようにした。遊んでいる途中に新しい版が出たら、画面の下に「更新する」の案内が出る",
     "輝き・重力の値段を見直した（レベルが上がるほど高くなる）",
@@ -745,18 +748,58 @@ function applySave(d) {
   }
 }
 
-// 書き出し：JSONをbase64にした文字列（「COSMOS1:」から始まる）
-const SAVE_PREFIX = "COSMOS1:";
+// 書き出し：JSONを小文字と数字だけの文字列にしたもの（「COSMOS2:」から始まる）
+// 大文字・小文字が変わっても読めるように、base32（0-9とa-zの一部）を使う。
+// 前の形式（「COSMOS1:」+ base64）も読み込める
+const SAVE_PREFIX = "COSMOS2:";
+const OLD_PREFIX = "COSMOS1:";
+const B32 = "0123456789abcdefghjkmnpqrstvwxyz";
+function b32encode(bytes) {
+  let out = "", bits = 0, val = 0;
+  for (const b of bytes) {
+    val = (val << 8) | b; bits += 8;
+    while (bits >= 5) { out += B32[(val >>> (bits - 5)) & 31]; bits -= 5; }
+    val &= (1 << bits) - 1;
+  }
+  if (bits > 0) out += B32[(val << (5 - bits)) & 31];
+  return out;
+}
+function b32decode(str) {
+  // 読み間違えやすい文字（o→0、i/l→1）も受け付ける
+  const t = str.toLowerCase().replace(/o/g, "0").replace(/[il]/g, "1");
+  const out = []; let bits = 0, val = 0;
+  for (const ch of t) {
+    const v = B32.indexOf(ch);
+    if (v < 0) throw new Error("char");
+    val = (val << 5) | v; bits += 5;
+    if (bits >= 8) { out.push((val >>> (bits - 8)) & 255); bits -= 8; }
+    val &= (1 << bits) - 1;
+  }
+  return new Uint8Array(out);
+}
 function exportSave() {
   clampState();
   const json = JSON.stringify(S);
-  return SAVE_PREFIX + btoa(unescape(encodeURIComponent(json)));
+  return SAVE_PREFIX + b32encode(new TextEncoder().encode(json));
 }
 function importSave(text) {
-  const t = text.trim();
-  if (!t.startsWith(SAVE_PREFIX)) throw new Error("prefix");
-  const d = JSON.parse(decodeURIComponent(escape(atob(t.slice(SAVE_PREFIX.length)))));
-  if (typeof d !== "object" || !Array.isArray(d.amt)) throw new Error("shape");
+  // 途中に改行や空白が入っても読めるようにする
+  const t = text.replace(/\s+/g, "");
+  const head = t.slice(0, 8).toUpperCase();
+  let d;
+  if (head === SAVE_PREFIX) {
+    d = JSON.parse(new TextDecoder().decode(b32decode(t.slice(8))));
+  } else if (head === OLD_PREFIX) {
+    const body = t.slice(8);
+    try {
+      d = JSON.parse(decodeURIComponent(escape(atob(body))));
+    } catch (e) {
+      // 前の形式は大文字・小文字の区別が必要。全部小文字（大文字）になっていたら直せない
+      if (body === body.toLowerCase() || body === body.toUpperCase()) throw new Error("case");
+      throw e;
+    }
+  } else throw new Error("prefix");
+  if (typeof d !== "object" || !d || !Array.isArray(d.amt)) throw new Error("shape");
   applySave(d);
   S.last = Date.now(); // 別の端末の留守時間を二重に数えないように
 }
@@ -1358,7 +1401,8 @@ $("importBtn").addEventListener("click", () => {
     toast(`読み込みました（星屑 ${fmt(S.stardust)}、超新星 ${S.supernovas}回）`);
     if (migrationNotes.length) showUpdateNotice();
   } catch (e) {
-    toast("読み込めませんでした。「COSMOS1:」から始まる文字列を全部貼り付けてね");
+    if (e && e.message === "case") toast("読み込めませんでした。文字の大文字・小文字が変わってしまっているみたい。元のゲームで「書き出す」をやり直して、新しい文字列を貼り付けてね");
+    else toast("読み込めませんでした。「COSMOS」から始まる文字列を全部貼り付けてね");
   }
 });
 
