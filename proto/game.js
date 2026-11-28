@@ -3,6 +3,7 @@
 const GAME_VERSION = 5;
 const CHANGELOG = [
   { v: 5, date: "試作", items: [
+    "【試作版】部品にそれぞれ損を付けた。加速の軸は1周の効果も半分、共鳴の石は付けた円盤が止まる（そのかわり直列の判定から外れる）",
     "【試作版】部品は加速の軸・重り・共鳴の石の3つから。外側の円盤などを手に入れると順番に出てくる。質量でLv3まで強化できる（強くなるだけで、周期は変わらない）",
     "【試作版】ブラックホールを5回起こすと、上級の部品「はみ出し歯車」が出てくる。付ける場所によって直列が崩れる",
     "【試作版】降着円盤の周期を「刻」で数えるようにした。内側2刻・中間6刻・外側24刻で1周",
@@ -80,11 +81,11 @@ const RINGS = [
 const ODD_UNLOCK_BH = 5; // はみ出し歯車が出てくるブラックホールの回数
 const PARTS = [
   { id: "p_fast",   name: "加速の軸",     costs: [3, 5, 7],
-    eff: lv => `1周が半分になる${lv > 1 ? `。1周ごとの効果 ×${(1 + 0.2 * (lv - 1)).toFixed(1)}` : ""}` },
+    eff: lv => `1周が半分になるけど、1周ごとの効果も ×${(0.4 + 0.1 * lv).toFixed(1)}。直列が起きやすくなる` },
   { id: "p_weight", name: "重り",         costs: [4, 6, 8], needs: "ring1",
     eff: lv => `1周が2倍になるけど、1周ごとの効果が${2 + lv}倍` },
   { id: "p_reso",   name: "共鳴の石",     costs: [5, 7, 9], needs: "ring2",
-    eff: lv => `周期は変わらない。直列のときの倍率が ×3 → ×${3 + 2 * lv}` },
+    eff: lv => `付けた円盤は止まる（周回数が増えない）。そのかわり直列の判定から外れて、直列の倍率が ×3 → ×${3 + 2 * lv}` },
   { id: "p_odd",    name: "はみ出し歯車", costs: [5, 7, 9], unlock: () => S.blackholes >= ODD_UNLOCK_BH, advanced: true,
     eff: lv => `1周が1刻長くなるけど、周回数が${1 + lv}倍たまる。付ける場所によっては直列が崩れる` },
 ];
@@ -119,7 +120,7 @@ const periodWith = (i, part) => {
 const ringPeriodK = i => periodWith(i, S.equip[i]);
 const lapValueWith = part => {
   const lv = part ? Math.max(1, mlvl(part)) : 0;
-  if (part === "p_fast") return 1 + 0.2 * (lv - 1);
+  if (part === "p_fast") return 0.4 + 0.1 * lv;
   if (part === "p_weight") return 2 + lv;
   if (part === "p_odd") return 1 + lv;
   return 1;
@@ -134,9 +135,13 @@ const lcm = (a, b) => a / gcd(a, b) * b;
 // 直列の間隔（刻）。円盤が2つ以上回っていないと直列は起きない
 const alignEvery = periods => periods.length >= 2 ? periods.reduce(lcm) : 0;
 const activeRings = () => [0, 1, 2].filter(ringActive);
+// 共鳴の石を付けた円盤は止まって、直列の判定から外れる
+const stoppedWith = (i, eq) => eq[i] === "p_reso";
+const alignRingsWith = eq => activeRings().filter(i => !stoppedWith(i, eq));
+const alignRings = () => alignRingsWith(S.equip);
 // 次の直列まであと何刻か
 function kokuToAlign() {
-  const act = activeRings();
+  const act = alignRings();
   const L = alignEvery(act.map(ringPeriodK));
   if (!L) return null;
   const from = Math.max(S.koku, ...act.map(i => S.ringPause[i]));
@@ -150,7 +155,7 @@ function advanceRings(dt, live) {
   const k0 = S.koku, k1 = k0 + dk;
   S.koku = k1;
   if (S.alignLeft > 0) S.alignLeft = Math.max(0, S.alignLeft - dk);
-  const act = activeRings();
+  const act = alignRings(); // 回っている円盤（止まっている円盤は周回数も増えない）
   if (!act.length) return;
   for (let k = Math.floor(k0) + 1; k <= Math.floor(k1 + 1e-9); k++) {
     let done = 0;
@@ -676,6 +681,22 @@ function toggleLaw(id) {
   save();
 }
 
+function protoBH() { S.blackholes += 1; S.bhSeen = true; toast(`試作用：ブラックホールの回数 ${S.blackholes}`); save(); }
+let protoStartArmed = 0;
+function protoStart() {
+  // 2回押しで確定（今のセーブを上書きするので）
+  if (Date.now() - protoStartArmed > 4000) { protoStartArmed = Date.now(); toast("今の進み具合を上書きするよ。もう一度押すと始まる"); return; }
+  const keep = { flashOn: S.flashOn, notation: S.notation, hintOn: S.hintOn, seenVersion: S.seenVersion };
+  S = Object.assign(freshState(), keep, {
+    blackholes: 5, bhSeen: true, novaSeen: true, supernovas: 300, stardustTotal: 5000,
+    mass: 12, massTotal: 40, autoOn: true, autoNovaOn: true, autoNovaAt: 1,
+  });
+  S.up.auto = 4;
+  Object.assign(S.mup, { ring1: 1, ring2: 1, autoNova: 1, keepAuto: 1 });
+  starNextAt = Date.now() + 30000;
+  buildTiers(); buildShop(); buildBH(); render(); save();
+  toast("試作用：ブラックホール5回のあとの周期から始めた。質量12で部品を買ってみてね");
+}
 function protoMass() { S.mass += 10; S.massTotal += 10; if (!S.blackholes) { S.blackholes = 1; S.bhSeen = true; } toast("試作用：質量 +10"); save(); }
 function buyMassUpgrade(u) {
   const lv = mlvl(u.id);
@@ -1209,24 +1230,26 @@ function renderPartEditor(force) {
     const lapGain = +(RINGS[i].per * lapValueWith(id)).toFixed(2);
     // 選んでいる部品の説明と、この円盤でどうなるか
     const what = id ? `<b>${partName(id)}</b>：${partById(id).eff(Math.max(1, mlvl(id)))}` : "<b>部品なし</b>";
-    const res = `→ この円盤は <b>${p}刻で1周</b>${p !== base ? `（部品なしだと${base}刻）` : ""}、1周ごとに${RINGS[i].target} <b>+${lapGain}</b>`;
+    const res = stoppedWith(i, draftEquip)
+      ? `→ この円盤は <b>止まる</b>。今の ${RINGS[i].target} ×${(1 + RINGS[i].per * ringLaps(i)).toFixed(2)} のまま、直列のときだけ強くなる`
+      : `→ この円盤は <b>${p}刻で1周</b>${p !== base ? `（部品なしだと${base}刻）` : ""}、1周ごとに${RINGS[i].target} <b>+${lapGain}</b>`;
     return `<div class="pe-row"><div class="pe-name">${RINGS[i].name}<span class="pe-per num">${p}刻で1周</span></div><div class="chips">${opts}</div>`
       + `<p class="pe-what">${what}<br>${res}</p></div>`;
   }).join("");
   // 直列の間隔の比較
-  const nowL = alignEvery(act.map(ringPeriodK));
-  const newL = alignEvery(act.map(i => periodWith(i, draftEquip[i])));
-  const cmp = !newL ? "円盤が2つ以上ないと直列は起きない"
+  const nowL = alignEvery(alignRings().map(ringPeriodK));
+  const newL = alignEvery(alignRingsWith(draftEquip).map(i => periodWith(i, draftEquip[i])));
+  const cmp = !newL ? "回っている円盤が2つ以上ないと直列は起きない"
     : nowL === newL ? `直列は <b>${newL}刻ごと</b>（今と同じ）`
     : `直列は ${nowL}刻ごと → <b>${newL}刻ごと</b>${newL < nowL ? "（増える）" : "（減る）"}`;
   // 刻の表（各円盤が1周し終わる刻に印、全部そろう刻はピンク）
   const cols = Math.max(12, Math.min(48, newL || 24));
   let grid = `<div class="pe-grid" style="grid-template-columns: 64px repeat(${cols}, minmax(0, 1fr))">`;
   act.forEach(i => {
-    const p = periodWith(i, draftEquip[i]);
-    grid += `<span class="pe-gl">${RINGS[i].name.replace("の円盤", "")}</span>`;
+    const p = periodWith(i, draftEquip[i]), st = stoppedWith(i, draftEquip);
+    grid += `<span class="pe-gl">${RINGS[i].name.replace("の円盤", "")}${st ? "（止）" : ""}</span>`;
     for (let t = 1; t <= cols; t++) {
-      const hit = t % p === 0, al = newL && t % newL === 0;
+      const hit = !st && t % p === 0, al = !st && newL && t % newL === 0;
       grid += `<span class="pe-c${hit ? (al ? " al" : " hit") : ""}"></span>`;
     }
   });
@@ -1432,11 +1455,14 @@ function renderBH() {
       return;
     }
     const pk = ringPeriodK(i), part = S.equip[i];
-    const paused = S.koku < S.ringPause[i];
-    el.effect.innerHTML = `${r.target} <b>×${ringMult(i).toFixed(2)}</b>（${pk}刻で1周、1周ごとに +${+(r.per * lapValueWith(part)).toFixed(2)}）`
+    const stopped = stoppedWith(i, S.equip);
+    const paused = !stopped && S.koku < S.ringPause[i];
+    el.effect.innerHTML = (stopped
+      ? `${r.target} <b>×${ringMult(i).toFixed(2)}</b>（止まっている。直列のときに強くなる）`
+      : `${r.target} <b>×${ringMult(i).toFixed(2)}</b>（${pk}刻で1周、1周ごとに +${+(r.per * lapValueWith(part)).toFixed(2)}）`)
       + `<br><span class="part-tag">${part ? "部品：" + partName(part) : "部品なし"}${paused ? "・付け替え中（もうすぐ回り出す）" : ""}</span>`;
     el.laps.textContent = `${ringLaps(i)} 周`;
-    el.bar.style.width = paused ? "0" : (((S.koku % pk) / pk) * 100) + "%";
+    el.bar.style.width = (paused || stopped) ? "0" : (((S.koku % pk) / pk) * 100) + "%";
   });
   renderAlign();
   renderPartEditor();
@@ -1680,6 +1706,8 @@ document.querySelectorAll(".tab[data-tab]").forEach(tab => {
 
 $("buyMax").addEventListener("click", () => { buyMax(); render(); });
 $("protoMassBtn").addEventListener("click", () => { protoMass(); render(); });
+$("protoBHBtn").addEventListener("click", () => { protoBH(); render(); });
+$("protoStartBtn").addEventListener("click", () => protoStart());
 $("autoBtn").addEventListener("click", () => { S.autoOn = !S.autoOn; render(); });
 $("bhBtn").addEventListener("click", () => { blackhole(); render(); });
 let crunchArmed = false;
@@ -2059,7 +2087,7 @@ function drawRing(c, i, r, tilt, back, now) {
   if (!on) return;
   // 今の周の位置に光の粒と尾
   const pk = ringPeriodK(i);
-  const ph = (S.koku < S.ringPause[i] ? 0 : (S.koku % pk) / pk) * Math.PI * 2;
+  const ph = (S.koku < S.ringPause[i] || stoppedWith(i, S.equip) ? 0 : (S.koku % pk) / pk) * Math.PI * 2;
   // 直列した瞬間：3つの粒がそろった向きに光の筋と、広がる光の輪
   const since = (performance.now() - alignFlashAt) / 1000;
   if (!back && i === 2 && since < 1.4) {
