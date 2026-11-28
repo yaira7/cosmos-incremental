@@ -1197,8 +1197,14 @@ function renderPartEditor(force) {
       const name = id ? partName(id) : "なし";
       return `<button class="chip${on ? " on" : ""}" data-i="${i}" data-id="${id || ""}">${name}</button>`;
     }).join("");
-    const p = periodWith(i, draftEquip[i]);
-    return `<div class="pe-row"><div class="pe-name">${RINGS[i].name}<span class="pe-per num">${p}刻で1周</span></div><div class="chips">${opts}</div></div>`;
+    const id = draftEquip[i];
+    const p = periodWith(i, id), base = RINGS[i].koku;
+    const lapGain = +(RINGS[i].per * lapValueWith(id)).toFixed(2);
+    // 選んでいる部品の説明と、この円盤でどうなるか
+    const what = id ? `<b>${partName(id)}</b>：${partById(id).eff(Math.max(1, mlvl(id)))}` : "<b>部品なし</b>";
+    const res = `→ この円盤は <b>${p}刻で1周</b>${p !== base ? `（部品なしだと${base}刻）` : ""}、1周ごとに${RINGS[i].target} <b>+${lapGain}</b>`;
+    return `<div class="pe-row"><div class="pe-name">${RINGS[i].name}<span class="pe-per num">${p}刻で1周</span></div><div class="chips">${opts}</div>`
+      + `<p class="pe-what">${what}<br>${res}</p></div>`;
   }).join("");
   // 直列の間隔の比較
   const nowL = alignEvery(act.map(ringPeriodK));
@@ -1221,7 +1227,8 @@ function renderPartEditor(force) {
   for (let t = 1; t <= cols; t++) grid += `<span class="pe-n num">${t % 6 === 0 ? t : ""}</span>`;
   grid += `</div>`;
   const changedN = act.filter(i => draftEquip[i] !== S.equip[i]).length;
-  $("peBody").innerHTML = rows + `<p class="pe-cmp">${cmp}</p>` + grid
+  const list = `<details class="pe-list"><summary>持っている部品の効果</summary><ul>${owned.map(p => `<li><b>${partName(p.id)}</b>：${p.eff(mlvl(p.id))}</li>`).join("")}</ul></details>`;
+  $("peBody").innerHTML = list + rows + `<p class="pe-cmp">${cmp}</p>` + grid
     + `<p class="pe-note">${cols < newL ? `表は最初の${cols}刻だけ。` : ""}紫は1周し終わる刻、ピンクは全部そろう刻（直列）。`
     + (changedN ? `付け替えた円盤（${changedN}つ）は、区切りのいい刻まで止まって回り直す。回りかけの1周はなくなる。` : "") + `</p>`;
   $("peBody").querySelectorAll(".chip").forEach(b => b.onclick = () => setDraft(+b.dataset.i, b.dataset.id || null));
