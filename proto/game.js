@@ -3,7 +3,8 @@
 const GAME_VERSION = 5;
 const CHANGELOG = [
   { v: 5, date: "試作", items: [
-    "【試作版】部品を質量でLv3まで強化できるようにした。強化すると周期も変わるので、いい組み合わせが入れ替わる",
+    "【試作版】部品は加速の軸・重り・共鳴の石の3つから。外側の円盤などを手に入れると順番に出てくる。質量でLv3まで強化できる（強くなるだけで、周期は変わらない）",
+    "【試作版】ブラックホールを5回起こすと、上級の部品「はみ出し歯車」が出てくる。付ける場所によって直列が崩れる",
     "【試作版】降着円盤の周期を「刻」で数えるようにした。内側2刻・中間6刻・外側24刻で1周",
     "【試作版】円盤が全部同時に1周し終わると「直列」。6刻のあいだ、円盤の上乗せ分が3倍になる",
     "【試作版】「円盤を加速」をなくして、質量ショップで「部品」を買うようにした。部品は円盤に1つずつ付けられて、周期や効果が変わる",
@@ -73,19 +74,19 @@ const RINGS = [
   { name: "外側の円盤", koku: 24, per: 0.07, target: "超新星で手に入る星屑" },
 ];
 // 円盤に付ける部品（各円盤に1つ。同じ部品は1つしか持てない）
-// 質量で Lv3 まで強化できる。強化すると周期そのものが変わるので、いい組み合わせが入れ替わる
-// 値段の合計はビッグクランチまでに手に入る質量より多め（全部は最大にならない「つなぎ」）
+// 基本の3つは周期を「半分」か「2倍」にするだけなので、直列は崩れない。
+// はみ出し歯車だけは周期を1刻ずらすので、付ける場所によって直列が崩れる（上級の部品・パズル担当）
+// 強化は強くなるだけで、周期は変わらない（ビッグクランチまでのつなぎ）
+const ODD_UNLOCK_BH = 5; // はみ出し歯車が出てくるブラックホールの回数
 const PARTS = [
   { id: "p_fast",   name: "加速の軸",     costs: [3, 5, 7],
-    eff: lv => `1周が 1/${1 + lv} になる` },
-  { id: "p_weight", name: "重り",         costs: [4, 6, 8],
-    eff: lv => `1周が${lv >= 3 ? 3 : 2}倍になるけど、1周ごとの効果が${[0, 3, 4, 6][lv]}倍` },
-  { id: "p_reso",   name: "共鳴の石",     costs: [5, 7, 9],
-    eff: lv => `周期は変わらない。直列のときの倍率が ×3 → ×${1 + 2 * (lv + 1)}${lv >= 3 ? "、直列が10刻続く" : ""}` },
-  { id: "p_odd",    name: "はみ出し歯車", costs: [5, 7, 9],
-    eff: lv => `1周が${lv}刻長くなるけど、周回数が${1 + lv}倍たまる` },
-  { id: "p_meteor", name: "流星の軸",     costs: [2, 3, 4],
-    eff: lv => `この円盤が1周するたびに、次の流れ星が${2 + 2 * lv}秒早く来る` },
+    eff: lv => `1周が半分になる${lv > 1 ? `。1周ごとの効果 ×${(1 + 0.2 * (lv - 1)).toFixed(1)}` : ""}` },
+  { id: "p_weight", name: "重り",         costs: [4, 6, 8], needs: "ring1",
+    eff: lv => `1周が2倍になるけど、1周ごとの効果が${2 + lv}倍` },
+  { id: "p_reso",   name: "共鳴の石",     costs: [5, 7, 9], needs: "ring2",
+    eff: lv => `周期は変わらない。直列のときの倍率が ×3 → ×${3 + 2 * lv}` },
+  { id: "p_odd",    name: "はみ出し歯車", costs: [5, 7, 9], unlock: () => S.blackholes >= ODD_UNLOCK_BH, advanced: true,
+    eff: lv => `1周が1刻長くなるけど、周回数が${1 + lv}倍たまる。付ける場所によっては直列が崩れる` },
 ];
 const partById = id => PARTS.find(p => p.id === id);
 const partName = id => `${partById(id).name}${mlvl(id) > 1 ? " Lv" + mlvl(id) : ""}`;
@@ -95,7 +96,8 @@ const MUPGRADES = [
     cost: () => 2,                   effect: lv => lv ? "あり" : "なし" },
   { id: "ring2",    name: "外側の円盤",       desc: `3つ目の円盤ができる。${RINGS[2].koku}刻で1周し、1周ごとに${RINGS[2].target}が +${RINGS[2].per}倍`, max: 1, needs: "ring1",
     cost: () => 4,                   effect: lv => lv ? "あり" : "なし" },
-  ...PARTS.map(p => ({ id: p.id, name: `部品：${p.name}`, desc: "円盤に付ける部品。強化すると周期も変わる", max: 3, part: true,
+  ...PARTS.map(p => ({ id: p.id, name: `部品：${p.name}`, desc: p.advanced ? "上級の部品。円盤に付けて使う" : "円盤に付けて使う。強化すると強くなる",
+    max: 3, part: true, needs: p.needs, unlock: p.unlock,
     cost: lv => p.costs[lv], effect: lv => lv ? p.eff(lv) : "なし" })),
   { id: "autoNova", name: "自動超新星",       desc: "恒星が決めた段階に届いたら、自動で超新星を起こす", max: 1,
     cost: () => 2,                   effect: lv => lv ? "あり" : "なし" },
@@ -108,22 +110,23 @@ const ringActive = i => S.blackholes > 0 && (i === 0 || mlvl("ring" + i) > 0);
 const ringLaps = i => Math.floor((S.rings[i] || 0) + 1e-9);
 // 部品を付けたときの周期（刻）と、1周でたまる周回数
 const periodWith = (i, part) => {
-  const b = RINGS[i].koku, lv = part ? Math.max(1, mlvl(part)) : 0;
-  if (part === "p_fast") return Math.ceil(b / (1 + lv));
-  if (part === "p_weight") return b * (lv >= 3 ? 3 : 2);
-  if (part === "p_odd") return b + lv;
+  const b = RINGS[i].koku;
+  if (part === "p_fast") return Math.ceil(b / 2);
+  if (part === "p_weight") return b * 2;
+  if (part === "p_odd") return b + 1;
   return b;
 };
 const ringPeriodK = i => periodWith(i, S.equip[i]);
 const lapValueWith = part => {
   const lv = part ? Math.max(1, mlvl(part)) : 0;
-  if (part === "p_weight") return [1, 3, 4, 6][lv];
+  if (part === "p_fast") return 1 + 0.2 * (lv - 1);
+  if (part === "p_weight") return 2 + lv;
   if (part === "p_odd") return 1 + lv;
   return 1;
 };
 const resoOn = () => S.equip.some((p, i) => p === "p_reso" && ringActive(i));
-const alignMult = () => resoOn() ? 1 + 2 * (Math.max(1, mlvl("p_reso")) + 1) : 3;
-const alignLen = () => resoOn() && mlvl("p_reso") >= 3 ? 10 : ALIGN_KOKU;
+const alignMult = () => resoOn() ? 3 + 2 * Math.max(1, mlvl("p_reso")) : 3;
+const alignLen = () => ALIGN_KOKU;
 const aligned = () => S.alignLeft > 0;
 const ringMult = i => ringActive(i) ? 1 + RINGS[i].per * ringLaps(i) * (aligned() ? alignMult() : 1) : 1;
 const gcd = (a, b) => b ? gcd(b, a % b) : a;
@@ -155,7 +158,6 @@ function advanceRings(dt, live) {
       if (k <= S.ringPause[i] || k % ringPeriodK(i) !== 0) continue;
       S.rings[i] += lapValueWith(S.equip[i]);
       done++;
-      if (live && S.equip[i] === "p_meteor") starNextAt -= (2 + 2 * mlvl("p_meteor")) * 1000;
     }
     if (act.length >= 2 && done === act.length) {
       // 直列は「直列の間隔の半分」までしか続かない（ずっと直列にならないように）
@@ -527,7 +529,7 @@ function blackhole() {
     up, autoOn: S.autoOn, novaSeen: true,
   });
   S = Object.assign(freshState(), keep);
-  toast(`ブラックホール！ 質量 +${fmt(g)}`);
+  toast(S.blackholes === ODD_UNLOCK_BH ? `ブラックホール！ 質量 +${fmt(g)}。質量ショップに上級の部品「はみ出し歯車」が出てきた` : `ブラックホール！ 質量 +${fmt(g)}`);
   flash(true);
   save();
   buildTiers();
@@ -679,6 +681,7 @@ function buyMassUpgrade(u) {
   const lv = mlvl(u.id);
   if (lv >= u.max) return;
   if (u.needs && !mlvl(u.needs)) return;
+  if (u.unlock && !u.unlock()) return;
   const c = u.cost(lv);
   if (S.mass < c) return;
   S.mass -= c;
@@ -868,9 +871,13 @@ function applySave(d) {
         for (let lv = 0; lv < (om.spd1 || 0); lv++) r += 2 * Math.pow(2, lv);
         for (let lv = 0; lv < (om.spd2 || 0); lv++) r += 3 * Math.pow(2, lv);
         ["spd0", "spd1", "spd2"].forEach(k => delete S.mup[k]);
+        // 試作版の途中でなくした「流星の軸」も返す
+        for (let lv = 0; lv < (om.p_meteor || 0); lv++) r += [2, 3, 4][lv];
+        delete S.mup.p_meteor;
+        S.equip = S.equip.map(e => e === "p_meteor" ? null : e);
         if (r > 0) {
           S.mass += r;
-          migrationNotes.push(`「円盤を加速」がなくなって部品に変わったので、加速に使った質量 ${fmt(r)} を返しました。`);
+          migrationNotes.push(`「円盤を加速」（や試作版でなくなった部品）に使った質量 ${fmt(r)} を返しました。`);
         }
       }
       if (d.cycleStardust === undefined) S.cycleStardust = S.stardustTotal; // ブラックホール追加前のセーブ
@@ -1437,7 +1444,7 @@ function renderBH() {
   MUPGRADES.forEach((u, k) => {
     const el = mshopEls[k];
     const lv = mlvl(u.id);
-    const locked = u.needs && !mlvl(u.needs);
+    const locked = (u.needs && !mlvl(u.needs)) || (u.unlock && !u.unlock());
     const maxed = lv >= u.max;
     el.row.hidden = !!locked;
     el.row.classList.toggle("maxed", maxed);
