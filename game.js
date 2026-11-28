@@ -1651,6 +1651,8 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
+// iPhoneのSafariは、リロードや閉じるときに visibilitychange が来ないことがあるので、pagehide でも保存する
+window.addEventListener("pagehide", () => { S.last = Date.now(); save(); });
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) { S.last = Date.now(); save(); }
 });
