@@ -1,7 +1,10 @@
 // ===== バージョンと更新履歴 =====
 // 更新したら GAME_VERSION を1つ増やし、version.json の数字も同じにして、CHANGELOG の先頭に追記する
-const GAME_VERSION = 3;
+const GAME_VERSION = 4;
 const CHANGELOG = [
+  { v: 4, date: "11/28", items: [
+    "超新星・ブラックホール・ビッグクランチのタブに「最近の〜」の履歴を追加。タップで開くと、かかった時間ともらえた量が見られる（この版から記録を始める）",
+  ] },
   { v: 3, date: "11/28", items: [
     "はじめての超新星の前に、起こすと何がいいのか（もらえる星屑・買える強化・粘りすぎると損なこと）を超新星タブに出すようにした。1回起こすと消える",
   ] },
@@ -166,6 +169,26 @@ const SN_GAIN_SCALE = 10;     // 星屑がもう1つ増えるのに、恒星が�
 const OFFLINE_CAP = 24 * 3600; // 留守中に進む最大秒数
 const SAVE_KEY = "cosmos-save-v2";
 
+// ===== 記録 =====
+const HIST_MAX = { nova: 10, bh: 5, crunch: 5 };
+const freshHist = () => ({ nova: [], bh: [], crunch: [] });
+// play: 画面を開いていた時間（秒）、away: 閉じていた時間（秒、上限なし）
+// first: 初めて超新星・ブラックホール・ビッグクランチに届いたときの { play, away, at(日時) }
+const freshStats = () => ({ play: 0, away: 0, first: {} });
+let histVer = 0; // 履歴が変わったら増やす（表示の作り直し用）
+function pushHist(kind, entry) {
+  const list = S.hist[kind] || (S.hist[kind] = []);
+  list.unshift(entry);
+  if (list.length > HIST_MAX[kind]) list.length = HIST_MAX[kind];
+  histVer++;
+}
+function markFirst(kind) {
+  if (S.stats.first[kind]) return;
+  S.stats.first[kind] = { play: Math.round(S.stats.play), away: Math.round(S.stats.away), at: Date.now() };
+}
+// 留守中の自動超新星は1行にまとめる
+let awayNova = null;
+
 // ===== 状態 =====
 function freshState() {
   return {
@@ -212,6 +235,11 @@ function freshState() {
     hintOn: true,       // 起こしどきのヒントを出すか（ブラックホール後のみ）
     autoNovaAt: 3,      // 自動超新星：星屑がこの数以上もらえるときに起こす
     runTime: 0,         // この周回（前の超新星から）の経過秒数
+    bhTime: 0,          // 今のブラックホール周期の経過秒数（超新星では消えない）
+    bhNovas: 0,         // 今のブラックホール周期で起こした超新星の回数
+    crunchTime: 0,      // 今の宇宙（前のビッグクランチから）の経過秒数
+    hist: freshHist(),  // 最近の超新星・ブラックホール・ビッグクランチの記録（画面の履歴用）
+    stats: freshStats(), // 遊んだ時間の合計と、初めて届いたときの記録（セーブにだけ残す。調整用）
     runBestRate: 0,     // この周回で一番よかった「1分あたりの星屑」
     runLastBase: 0,     // この周回で最後に届いた獲得量（+1, +2…）
     runJumpRate: 0,     // 最後に獲得量が+1されたときの「1分あたりの星屑」
@@ -307,6 +335,8 @@ function tick(dt) {
   if (S.windBoost > 0) S.windBoost = Math.max(0, S.windBoost - dt);
   if (S.dust > S.runPeak) S.runPeak = S.dust;
   S.runTime += dt;
+  S.bhTime += dt;
+  S.crunchTime += dt;
   const rate = runRate();
   if (rate > S.runBestRate) S.runBestRate = rate;
   const base = snBase();
@@ -354,7 +384,7 @@ function buyMax() {
 }
 
 // 超新星・ブラックホールで消えないもの
-const META_KEYS = ["seenVersion", "lawDraft", "chooseOnCrunch", "starsCaught", "costV3", "flashOn", "seeds", "cards", "laws", "crunches", "crunchSeen", "pity", "lastPull", "windBoost", "notation", "speed", "last", "mass", "massTotal", "blackholes", "bhSeen", "mup", "autoNovaOn", "autoNovaAt", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2"];
+const META_KEYS = ["hist", "stats", "crunchTime", "seenVersion", "lawDraft", "chooseOnCrunch", "starsCaught", "costV3", "flashOn", "seeds", "cards", "laws", "crunches", "crunchSeen", "pity", "lastPull", "windBoost", "notation", "speed", "last", "mass", "massTotal", "blackholes", "bhSeen", "mup", "autoNovaOn", "autoNovaAt", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2"];
 function keepMeta() { const k = {}; META_KEYS.forEach(key => k[key] = S[key]); return k; }
 
 // silent: 留守中の計算など、何も出さない / auto: 自動超新星（フラッシュとお知らせは出さず、保存はいつものタイミングで）
@@ -363,12 +393,21 @@ function supernova(silent, auto) {
   const g = rollGain();
   // 残光の長さは、終わった周回の長さで決まる（周回が短いほど、残光も短い）
   const glowLen = Math.min(AFTERGLOW_TIME, S.runTime * AFTERGLOW_RATIO);
+  const sg = safeNum(g);
+  if (silent) {
+    // 留守中：まとめて1行にする
+    if (!awayNova) awayNova = { n: 0, t: 0, g: 0 };
+    awayNova.n++; awayNova.t += S.runTime; awayNova.g += sg;
+  } else {
+    pushHist("nova", { no: S.supernovas + 1, t: Math.round(S.runTime * 10) / 10, g: sg, auto: auto ? 1 : 0 });
+  }
+  markFirst("nova");
   if (!silent && !auto) toast(S.supernovas === 0
     ? `はじめての超新星！ 星屑 +${fmt(g)}。下の星屑ショップで強化を買おう`
     : `超新星！ 星屑 +${fmt(g)}`);
   const keep = Object.assign(keepMeta(), {
     stardust: S.stardust + g, stardustTotal: S.stardustTotal + g, supernovas: S.supernovas + 1,
-    cycleStardust: S.cycleStardust + g, bhNotified: S.bhNotified, rings: S.rings, up: S.up, autoOn: S.autoOn, novaSeen: true,
+    cycleStardust: S.cycleStardust + g, bhNotified: S.bhNotified, bhTime: S.bhTime, bhNovas: S.bhNovas + 1, rings: S.rings, up: S.up, autoOn: S.autoOn, novaSeen: true,
   });
   S = Object.assign(freshState(), keep);
   S.afterglow = glowLen;
@@ -395,6 +434,8 @@ function autoNova(silent) {
 function blackhole() {
   const g = massGainFor(S.cycleStardust);
   if (g <= 0) return;
+  pushHist("bh", { no: S.blackholes + 1, t: Math.round(S.bhTime), novas: S.bhNovas, g: safeNum(g) });
+  markFirst("bh");
   const up = freshUp();
   if (mlvl("keepAuto")) up.auto = lvl("auto");
   const keep = Object.assign(keepMeta(), {
@@ -409,7 +450,7 @@ function blackhole() {
 }
 
 // ビッグクランチで消えないもの（設定・記録・法則カードまわり）
-const CRUNCH_KEYS = ["seenVersion", "chooseOnCrunch", "starsCaught", "costV3", "flashOn", "notation", "speed", "last", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2",
+const CRUNCH_KEYS = ["hist", "stats", "seenVersion", "chooseOnCrunch", "starsCaught", "costV3", "flashOn", "notation", "speed", "last", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2",
   "seeds", "cards", "laws", "pity", "lastPull", "autoNovaOn", "autoNovaAt", "autoOn", "windBoost"];
 // ビッグクランチと「法則を変えて作り直す」で共通の、宇宙のリセット
 const keepAutomationNow = () => S.crunches >= 1; // 1回目のビッグクランチのあとからは、自動化が消えない
@@ -429,6 +470,8 @@ function bigCrunch() {
   const g = seedGainFor(S.runPeak);
   if (g <= 0 || !crunchMassOk()) return;
   const choose = S.chooseOnCrunch !== false;
+  pushHist("crunch", { no: S.crunches + 1, t: Math.round(S.crunchTime), bhs: S.blackholes, g: safeNum(g) });
+  markFirst("crunch");
   resetUniverse({ seeds: S.seeds + g, crunches: S.crunches + 1 });
   if (choose) { S.choosing = true; S.lawDraft = S.laws.slice(); }
   toast(`ビッグクランチ！ 宇宙の種 +${fmt(g)}`);
@@ -702,6 +745,17 @@ function applySave(d) {
       S.up = Object.assign(freshUp(), d.up || {});
       S.mup = Object.assign(freshMup(), d.mup || {});
       if (!d.cards) S.cards = {};
+      S.hist = Object.assign(freshHist(), d.hist || {});
+      histVer++;
+      S.stats = Object.assign(freshStats(), d.stats || {});
+      S.stats.first = Object.assign({}, S.stats.first);
+      if (!d.stats) {
+        // 記録を始める前のセーブ：もう届いている段階は「記録なし」にしておく（次に起こした時を初回と数えないように）
+        S.stats.legacy = true;
+        if (S.supernovas > 0) S.stats.first.nova = { old: 1 };
+        if (S.massTotal > 0 || S.blackholes > 0 || S.crunches > 0) S.stats.first.bh = { old: 1 };
+        if (S.crunches > 0) S.stats.first.crunch = { old: 1 };
+      }
       if (!d.costV3) {
         // 輝き・重力を値上げしたので、旧価格（1, 2, 3…）で払い戻してLv0に戻す。
         // 旧価格で育った今の周回（塵が桁違いに多い）も、ここでやり直しにする
@@ -818,12 +872,18 @@ async function wipe() {
 
 // ===== 留守中の進行 =====
 function applyOffline(seconds) {
+  S.stats.away += seconds;
   const sec = Math.min(seconds, OFFLINE_CAP);
   const before = S.dust;
   const steps = 300;
   const dt = sec / steps;
   const novasBefore = S.supernovas;
+  awayNova = null;
   for (let k = 0; k < steps; k++) { tick(dt); autoNova(true); }
+  if (awayNova) {
+    pushHist("nova", { no: S.supernovas, n: awayNova.n, t: Math.round(awayNova.t), g: awayNova.g, away: 1 });
+    awayNova = null;
+  }
   const gained = S.dust - before;
   if (S.supernovas > novasBefore) {
     toast(`留守中に超新星が ${S.supernovas - novasBefore} 回起きた`);
@@ -1200,7 +1260,56 @@ function goalText() {
   return `超新星を起こすと 星屑 <strong>+${snGainText()}</strong>`;
 }
 
+// ===== 履歴の表示 =====
+const fmtDur = sec => {
+  sec = Math.max(0, Math.round(sec));
+  if (sec < 60) return `${sec}秒`;
+  if (sec < 3600) return fmtTime(sec);
+  return `${Math.floor(sec / 3600)}時間${String(Math.floor(sec % 3600 / 60)).padStart(2, "0")}分`;
+};
+const HIST_EMPTY = { nova: "まだ記録がない。次の超新星から記録される", bh: "まだ記録がない。次のブラックホールから記録される", crunch: "まだ記録がない。次のビッグクランチから記録される" };
+function histTable(kind) {
+  const list = S.hist[kind] || [];
+  if (!list.length) return `<p class="hist-empty">${HIST_EMPTY[kind]}</p>`;
+  const tr = (cells, cls) => `<tr${cls ? ` class="${cls}"` : ""}>${cells.map(c => `<td>${c}</td>`).join("")}</tr>`;
+  let head, rows, foot = "";
+  if (kind === "nova") {
+    const perMin = e => e.t > 0 ? e.g / e.t * 60 : 0;
+    const normal = list.filter(e => !e.away);
+    const best = normal.length >= 2 ? Math.max(...normal.map(perMin)) : -1;
+    head = ["回", "時間", "星屑", "毎分"];
+    rows = list.map(e => e.away
+      ? tr([`留守中<span class="tag">${e.n}回</span>`, `平均 ${fmtDur(e.t / e.n)}`, `+${fmt(e.g)}`, perMin(e).toFixed(2)])
+      : tr([`${e.no}回目${e.auto ? '<span class="tag">自動</span>' : ""}`, fmtDur(e.t), `+${fmt(e.g)}`, perMin(e).toFixed(2)],
+           perMin(e) === best ? "best" : ""));
+    if (normal.length >= 2) {
+      const t = normal.reduce((a, e) => a + e.t, 0), g = normal.reduce((a, e) => a + e.g, 0);
+      foot = `留守中を除いた${normal.length}回の平均：${fmtDur(t / normal.length)}・毎分 ${(g / t * 60).toFixed(2)} 星屑。太字は毎分が一番よかった回`;
+    }
+  } else if (kind === "bh") {
+    head = ["回", "時間", "超新星", "質量"];
+    rows = list.map(e => tr([`${e.no}回目`, fmtDur(e.t), `${e.novas}回`, `+${fmt(e.g)}`]));
+  } else {
+    head = ["回", "時間", "ブラックホール", "宇宙の種"];
+    rows = list.map(e => tr([`${e.no}回目`, fmtDur(e.t), `${e.bhs}回`, `+${fmt(e.g)}`]));
+  }
+  return `<table><thead><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody></table>`
+    + (foot ? `<p class="hist-foot">${foot}</p>` : "");
+}
+const histShown = { nova: -1, bh: -1, crunch: -1 };
+function renderHist(force) {
+  ["nova", "bh", "crunch"].forEach(k => {
+    const d = $(k + "Hist");
+    if (!d || !d.open) return;
+    if (!force && histShown[k] === histVer) return;
+    histShown[k] = histVer;
+    $(k + "HistBody").innerHTML = histTable(k);
+  });
+}
+["nova", "bh", "crunch"].forEach(k => $(k + "Hist").addEventListener("toggle", () => renderHist(true)));
+
 function render() {
+  renderHist();
   $("dust").textContent = fmt(S.dust);
   const ag = afterglowMult(0);
   const extras = [];
@@ -1805,7 +1914,7 @@ function loop(now) {
   const wall = Date.now();
   const gap = (wall - S.last) / 1000;
   if (gap > 5) applyOffline(gap);          // 裏に回っていた分は留守中扱い
-  else if (gap > 0) { tick(gap * S.speed); autoNova(false); }
+  else if (gap > 0) { S.stats.play += gap; tick(gap * S.speed); autoNova(false); }
   S.last = wall;
 
   drawUniverse(now);
