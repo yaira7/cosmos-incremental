@@ -497,6 +497,57 @@ button.action.on { background: var(--accent); color: var(--accent-ink); border-c
 .chooser-actions { display: grid; gap: 8px; margin-top: 16px; }
 .chooser-actions button.action { min-height: 44px; }
 
+/* アップデートのお知らせ */
+.update-notice {
+  position: fixed;
+  inset: 0;
+  z-index: 18;
+  background: var(--bg);
+  background: color-mix(in srgb, var(--bg) 75%, transparent);
+  display: grid;
+  place-items: center;
+  overflow-y: auto;
+  padding: calc(16px + env(safe-area-inset-top, 0px)) max(16px, env(safe-area-inset-right, 0px)) calc(16px + env(safe-area-inset-bottom, 0px)) max(16px, env(safe-area-inset-left, 0px));
+}
+.update-box {
+  width: 100%;
+  max-width: 460px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 18px 18px 14px;
+}
+.update-box button.nova { margin-top: 14px; }
+.notice-ver { margin: 12px 0 4px; font-size: 13px; font-weight: 700; color: var(--accent); }
+.notice-reset { margin: 8px 0 4px; font-size: 14px; font-weight: 700; color: var(--nova); }
+.notice-list { margin: 0; padding-left: 1.2em; display: grid; gap: 4px; font-size: 14px; }
+.notice-list.reset { padding: 8px 10px 8px 1.8em; border: 1px solid var(--nova); border-radius: 8px; }
+/* 新しい版があるときの案内：画面の下に出す（上は塵の表示があるので） */
+.new-version {
+  position: fixed;
+  left: max(16px, env(safe-area-inset-left, 0px));
+  right: max(16px, env(safe-area-inset-right, 0px));
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  max-width: 488px;
+  margin: 0 auto;
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 8px 8px 14px;
+  border-radius: 12px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+body.has-update .toast { bottom: calc(84px + env(safe-area-inset-bottom, 0px)); }
+/* 案内が出ている間は、一番下の内容が隠れないように余白を足す */
+body.has-update .layout { padding-bottom: 80px; }
+.new-version button.action { background: var(--accent-ink); color: var(--accent); border-color: var(--accent-ink); min-height: 36px; }
+
 /* 設定 */
 .setting { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); gap: 12px; }
 .setting:last-child { border-bottom: none; }
@@ -571,6 +622,14 @@ button.danger { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 3
   </div>
 </div>
 
+<div class="update-notice" id="updateNotice" hidden>
+  <div class="update-box" role="dialog" aria-labelledby="noticeTitle">
+    <h2 class="chooser-title" id="noticeTitle">アップデートのお知らせ</h2>
+    <div id="noticeBody"></div>
+    <button class="nova" id="noticeOk">OK</button>
+  </div>
+</div>
+
 <div class="chooser" id="chooser" hidden>
   <div class="chooser-box">
     <p class="chooser-eyebrow">ビッグクランチ</p>
@@ -587,6 +646,11 @@ button.danger { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 3
       <button class="action" id="chSame">前回と同じ法則で始める</button>
     </div>
   </div>
+</div>
+
+<div class="new-version" id="newVersionBar" hidden>
+  <span>新しいバージョンがあります</span>
+  <button class="action" id="reloadBtn">更新する</button>
 </div>
 
 <div class="layout">

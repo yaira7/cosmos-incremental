@@ -1,3 +1,17 @@
+// ===== バージョンと更新履歴 =====
+// 更新したら GAME_VERSION を1つ増やし、version.json の数字も同じにして、CHANGELOG の先頭に追記する
+const GAME_VERSION = 1;
+const CHANGELOG = [
+  { v: 1, date: "11/28", items: [
+    "アップデートのお知らせを出すようにした。遊んでいる途中に新しい版が出たら、画面の下に「更新する」の案内が出る",
+    "輝き・重力の値段を見直した（レベルが上がるほど高くなる）",
+    "ビッグクランチと法則カードを追加。条件は「1回の周回で塵1e50」と「質量を35持っていること」",
+    "ブラックホールに必要な星屑が、回数に応じて増えるようにした（最初は30、そのあと200→400→800）",
+    "残光は「前の周回の長さの1/3（最大60秒）」だけ続くようにした",
+    "流れ星を追加（タップするといいことがある）。PCなど横に広い画面では2列で表示",
+  ] },
+];
+
 // ===== バランス調整用の定数（ここをいじって遊び心地を変える） =====
 // base = 最初の1個の値段、r = 1個買うごとに値段が何倍になるか、prod = 1個が毎秒生む量
 const TIERS = [
@@ -187,6 +201,7 @@ function freshState() {
     chooseOnCrunch: true, // ビッグクランチ後に法則を選ぶ画面を出すか（設定）
     flashOn: true,      // 超新星などで画面をフラッシュさせるか
     starsCaught: 0,     // 流れ星をつかまえた回数
+    seenVersion: GAME_VERSION, // お知らせを読んだバージョン
     costV3: true,       // 輝き・重力が値上げされてからのセーブか
     hintOn: true,       // 起こしどきのヒントを出すか（ブラックホール後のみ）
     autoNovaAt: 3,      // 自動超新星：星屑がこの数以上もらえるときに起こす
@@ -333,7 +348,7 @@ function buyMax() {
 }
 
 // 超新星・ブラックホールで消えないもの
-const META_KEYS = ["lawDraft", "chooseOnCrunch", "starsCaught", "costV3", "flashOn", "seeds", "cards", "laws", "crunches", "crunchSeen", "pity", "lastPull", "windBoost", "notation", "speed", "last", "mass", "massTotal", "blackholes", "bhSeen", "mup", "autoNovaOn", "autoNovaAt", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2"];
+const META_KEYS = ["seenVersion", "lawDraft", "chooseOnCrunch", "starsCaught", "costV3", "flashOn", "seeds", "cards", "laws", "crunches", "crunchSeen", "pity", "lastPull", "windBoost", "notation", "speed", "last", "mass", "massTotal", "blackholes", "bhSeen", "mup", "autoNovaOn", "autoNovaAt", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2"];
 function keepMeta() { const k = {}; META_KEYS.forEach(key => k[key] = S[key]); return k; }
 
 // silent: 留守中の計算など、何も出さない / auto: 自動超新星（フラッシュとお知らせは出さず、保存はいつものタイミングで）
@@ -386,7 +401,7 @@ function blackhole() {
 }
 
 // ビッグクランチで消えないもの（設定・記録・法則カードまわり）
-const CRUNCH_KEYS = ["chooseOnCrunch", "starsCaught", "costV3", "flashOn", "notation", "speed", "last", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2",
+const CRUNCH_KEYS = ["seenVersion", "chooseOnCrunch", "starsCaught", "costV3", "flashOn", "notation", "speed", "last", "hintOn", "supernovas", "stardustTotal", "memV2", "compV2",
   "seeds", "cards", "laws", "pity", "lastPull", "autoNovaOn", "autoNovaAt", "autoOn", "windBoost"];
 // ビッグクランチと「法則を変えて作り直す」で共通の、宇宙のリセット
 const keepAutomationNow = () => S.crunches >= 1; // 1回目のビッグクランチのあとからは、自動化が消えない
@@ -434,6 +449,57 @@ function startUniverse(laws) {
   save();
   render();
 }
+
+// ===== アップデートのお知らせ =====
+// 開いたとき、前回より新しい版なら変更点を、セーブを書き換えたならその説明を出す
+function showUpdateNotice() {
+  const news = CHANGELOG.filter(c => c.v > (S.seenVersion || 0)).slice(0, 5);
+  const notes = migrationNotes.slice();
+  migrationNotes = [];
+  if (!news.length && !notes.length) { S.seenVersion = GAME_VERSION; return; }
+  const box = $("noticeBody");
+  box.innerHTML = "";
+  if (notes.length) {
+    const h = document.createElement("p");
+    h.className = "notice-reset";
+    h.textContent = "進み具合が一部リセットされました";
+    box.appendChild(h);
+    const ul = document.createElement("ul");
+    ul.className = "notice-list reset";
+    notes.forEach(t => { const li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
+    box.appendChild(ul);
+  }
+  news.forEach(c => {
+    const h = document.createElement("p");
+    h.className = "notice-ver num";
+    h.textContent = `バージョン ${c.v}（${c.date}）`;
+    box.appendChild(h);
+    const ul = document.createElement("ul");
+    ul.className = "notice-list";
+    c.items.forEach(t => { const li = document.createElement("li"); li.textContent = t; ul.appendChild(li); });
+    box.appendChild(ul);
+  });
+  $("updateNotice").hidden = false;
+}
+function closeUpdateNotice() {
+  $("updateNotice").hidden = true;
+  S.seenVersion = GAME_VERSION;
+  save();
+}
+// 遊んでいる途中に新しい版が出ていないか、ときどき確かめる（version.json の数字と比べる）
+async function checkNewVersion() {
+  try {
+    const r = await fetch(`version.json?t=${Date.now()}`, { cache: "no-store" });
+    if (!r.ok) return;
+    const j = await r.json();
+    if (typeof j.version === "number" && j.version > GAME_VERSION) {
+      $("newVersionBar").hidden = false;
+      document.body.classList.add("has-update");
+    }
+  } catch (e) { /* ファイルとして開いているときなどは確かめない */ }
+}
+setInterval(() => { if (!document.hidden) checkNewVersion(); }, 5 * 60 * 1000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkNewVersion(); });
 
 // ===== 法則の下書き =====
 const currentDraft = () => S.lawDraft || S.laws;
@@ -617,10 +683,13 @@ async function load() {
   } catch (e) { /* セーブがまだない */ }
 }
 // セーブの中身を状態に反映する（古い版のセーブの移行もここでやる）
+let migrationNotes = []; // セーブの読み込みで進み具合を変えたときの説明（お知らせに出す）
 function applySave(d) {
+  migrationNotes = [];
   {
     {
       S = Object.assign(freshState(), d);
+      if (d.seenVersion === undefined) S.seenVersion = 0; // お知らせ機能より前のセーブ
       clampState(); // 壊れた数（null・NaN・∞）が入っていたら直す
       S.up = Object.assign(freshUp(), d.up || {});
       S.mup = Object.assign(freshMup(), d.mup || {});
@@ -629,7 +698,9 @@ function applySave(d) {
         // 輝き・重力を値上げしたので、旧価格（1, 2, 3…）で払い戻してLv0に戻す。
         // 旧価格で育った今の周回（塵が桁違いに多い）も、ここでやり直しにする
         const tri = n => n * (n + 1) / 2;
-        S.stardust += tri(S.up.glow || 0) + tri(S.up.gravity || 0);
+        const refund = tri(S.up.glow || 0) + tri(S.up.gravity || 0);
+        if (refund > 0 || S.dust > 10) migrationNotes.push(`輝き・重力の値段が変わったため、輝き・重力をLv0に戻し、星屑 ${fmt(refund)} を払い戻しました。今の周回（塵と岩〜銀河）もやり直しになっています。`);
+        S.stardust += refund;
         S.up.glow = 0; S.up.gravity = 0;
         const f = freshState();
         ["dust", "amt", "bought", "runPeak", "runTime", "runBestRate", "runLastBase", "runJumpRate", "crunchNotified"].forEach(k => S[k] = f[k]);
@@ -642,19 +713,31 @@ function applySave(d) {
       if (!Array.isArray(d.rings)) S.rings = [0, 0, 0];
       if (d.cycleStardust === undefined) S.cycleStardust = S.stardustTotal; // ブラックホール追加前のセーブ
       if (!d.compV2 && S.up.compress > 0) { // 圧縮を値上げしたので、旧価格（1, 2, 3…）で払い戻してLv0に戻す
-        for (let lv = 0; lv < Math.min(S.up.compress, 5); lv++) S.stardust += 1 + lv;
+        let r = 0;
+        for (let lv = 0; lv < Math.min(S.up.compress, 5); lv++) r += 1 + lv;
+        S.stardust += r;
+        migrationNotes.push(`圧縮の値段が変わったため、圧縮をLv0に戻し、星屑 ${fmt(r)} を払い戻しました。`);
         S.up.compress = 0;
       }
       if (!d.memV2 && S.up.memory > 0) {
-        for (let lv = 0; lv < S.up.memory; lv++) S.stardust += 4 * Math.pow(4, lv);
+        let r = 0;
+        for (let lv = 0; lv < S.up.memory; lv++) r += 4 * Math.pow(4, lv);
+        S.stardust += r;
+        migrationNotes.push(`恒星の記憶の仕組みが変わったため、恒星の記憶をLv0に戻し、星屑 ${fmt(r)} を払い戻しました。`);
         S.up.memory = 0;
       }
       if (S.up.compress > 5) {
-        for (let lv = 5; lv < S.up.compress; lv++) S.stardust += 3 * Math.pow(2, lv);
+        let r = 0;
+        for (let lv = 5; lv < S.up.compress; lv++) r += 3 * Math.pow(2, lv);
+        S.stardust += r;
+        migrationNotes.push(`圧縮の上限がLv5になったため、超えた分の星屑 ${fmt(r)} を払い戻しました。`);
         S.up.compress = 5;
       }
       if (d.up && d.up.primal) { // 廃止した「原始の塵」の分は星屑で払い戻す
-        for (let lv = 0; lv < d.up.primal; lv++) { S.stardust += Math.pow(3, lv); }
+        let r = 0;
+        for (let lv = 0; lv < d.up.primal; lv++) r += Math.pow(3, lv);
+        S.stardust += r;
+        migrationNotes.push(`「原始の塵」をなくしたため、星屑 ${fmt(r)} を払い戻しました。`);
         delete S.up.primal;
       }
       if (!d.stardustTotal) S.stardustTotal = S.stardust; // 前の版のセーブから引き継ぐとき
@@ -1193,6 +1276,8 @@ $("crBtn").addEventListener("click", () => {
 $("pullBtn").addEventListener("click", () => { if (pullLaw()) { pullAnimAt = performance.now(); render(); } });
 $("chPull").addEventListener("click", () => { if (pullLaw()) { pullAnimAt = performance.now(); renderChooser(); } });
 $("chStart").addEventListener("click", () => startUniverse(currentDraft()));
+$("noticeOk").addEventListener("click", closeUpdateNotice);
+$("reloadBtn").addEventListener("click", () => { S.last = Date.now(); save(); location.reload(); });
 $("chSame").addEventListener("click", () => startUniverse(S.laws));
 let rebuildArmed = false;
 $("rebuildBtn").addEventListener("click", () => {
@@ -1271,6 +1356,7 @@ $("importBtn").addEventListener("click", () => {
     render();
     box.value = "";
     toast(`読み込みました（星屑 ${fmt(S.stardust)}、超新星 ${S.supernovas}回）`);
+    if (migrationNotes.length) showUpdateNotice();
   } catch (e) {
     toast("読み込めませんでした。「COSMOS1:」から始まる文字列を全部貼り付けてね");
   }
@@ -1688,5 +1774,7 @@ document.addEventListener("pointerdown", requestPersist, { once: true });
   S.last = Date.now();
   render();
   if (S.choosing) openChooser();
+  showUpdateNotice();
+  checkNewVersion();
   requestAnimationFrame(loop);
 })();
