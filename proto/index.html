@@ -463,6 +463,19 @@ button.nova:disabled { background: var(--surface); color: var(--muted); border: 
 button.law-btn { min-width: 84px; text-align: center; }
 .pull-result { grid-template-columns: 1fr; margin-top: 12px; }
 .pull-result.pop { animation: pop 0.6s ease-out; }
+.align-chip { display: inline-block; margin-left: 8px; padding: 2px 8px; border-radius: 10px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; vertical-align: middle; animation: align-pulse 0.9s ease-in-out infinite alternate; }
+@keyframes align-pulse { from { opacity: 0.75; } to { opacity: 1; } }
+.align-banner { position: fixed; left: 50%; top: 28%; transform: translate(-50%, -50%) scale(0.6); z-index: 60; pointer-events: none; opacity: 0; text-align: center; }
+.align-banner .ab-main { display: block; font-size: 56px; font-weight: 800; letter-spacing: 0.3em; padding-left: 0.3em; color: var(--accent); text-shadow: 0 0 18px var(--bg), 0 0 4px var(--bg); }
+.align-banner .ab-sub { display: block; font-size: 15px; font-weight: 700; color: var(--ink); text-shadow: 0 0 8px var(--bg); }
+.align-banner.show { animation: align-in 1.8s ease-out forwards; }
+@keyframes align-in {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+  15% { opacity: 1; transform: translate(-50%, -50%) scale(1.08); }
+  25% { transform: translate(-50%, -50%) scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -60%) scale(1); }
+}
 @keyframes pop {
   0% { transform: scale(0.7); opacity: 0; }
   60% { transform: scale(1.05); opacity: 1; }
@@ -709,6 +722,7 @@ button.danger { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 3
 <header class="top">
   <div>
     <span class="dust-amount num" id="dust">10</span><span class="dust-unit">塵</span>
+    <span class="align-chip num" id="alignChip" hidden></span>
   </div>
   <div class="dust-rate">
     <div class="num" id="rate">毎秒 0</div>
@@ -890,6 +904,7 @@ button.danger { font: inherit; font-size: 13px; padding: 6px 12px; min-height: 3
 
 <div id="flash"></div>
 <div class="toast" id="toast"></div>
+<div class="align-banner" id="alignBanner" aria-live="polite"><span class="ab-main">直列</span><span class="ab-sub" id="alignBannerSub"></span></div>
 
 <script src="game.js"></script>
 </body>

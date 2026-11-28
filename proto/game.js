@@ -144,7 +144,7 @@ function advanceRings(dt, live) {
     if (act.length >= 2 && done === act.length) {
       S.alignLeft = Math.max(0, ALIGN_KOKU - (k1 - k));
       S.alignCount = (S.alignCount || 0) + 1;
-      if (live) alignFlashAt = performance.now();
+      if (live) { alignFlashAt = performance.now(); showAlignBanner(); }
     }
   }
 }
@@ -1103,6 +1103,17 @@ function buildBH() {
   });
 }
 // ===== 直列の表示 =====
+function showAlignBanner() {
+  if (S.flashOn === false) return; // 演出オフの設定に従う
+  const b = $("alignBanner");
+  $("alignBannerSub").textContent = `円盤の力 ×${alignMult()}`;
+  b.classList.remove("show"); void b.offsetWidth; b.classList.add("show");
+}
+function renderAlignChip() {
+  const chip = $("alignChip");
+  chip.hidden = !aligned();
+  if (aligned()) chip.textContent = `直列中 ×${alignMult()}`;
+}
 function renderAlign() {
   const box = $("alignBox");
   const a = kokuToAlign();
@@ -1500,6 +1511,7 @@ function renderHist(force) {
 
 function render() {
   renderHist();
+  renderAlignChip();
   $("dust").textContent = fmt(S.dust);
   const ag = afterglowMult(0);
   const extras = [];
@@ -2016,8 +2028,15 @@ function drawRing(c, i, r, tilt, back, now) {
   // 今の周の位置に光の粒と尾
   const pk = ringPeriodK(i);
   const ph = (S.koku < S.ringPause[i] ? 0 : (S.koku % pk) / pk) * Math.PI * 2;
-  // 直列した瞬間：3つの粒がそろった向きに光の筋
+  // 直列した瞬間：3つの粒がそろった向きに光の筋と、広がる光の輪
   const since = (performance.now() - alignFlashAt) / 1000;
+  if (!back && i === 2 && since < 1.4) {
+    const rr = r * (0.3 + since / 1.4 * 0.9);
+    c.globalAlpha = (1 - since / 1.4) * 0.7;
+    c.strokeStyle = colors["--accent"]; c.lineWidth = 4 * (1 - since / 1.4) + 1;
+    c.beginPath(); c.ellipse(0, 0, rr, rr * tilt, 0, 0, Math.PI * 2); c.stroke();
+    c.globalAlpha = 1;
+  }
   if (!back && i === 0 && since < 1.6) {
     c.globalAlpha = (1 - since / 1.6) * 0.8;
     c.strokeStyle = colors["--star"]; c.lineWidth = 2;
